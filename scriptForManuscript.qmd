@@ -658,65 +658,65 @@ for(i in 1:nrow(pointData)){
 }
 
 
-#Record results from linear model pcDensity ~ nestDensity
-intercept = rep(NA, max(predicted$iteration))
-slope = rep(NA, max(predicted$iteration))
-aicLin = rep(NA, max(predicted$iteration))
-r2mLin = rep(NA, max(predicted$iteration))
-r2cLin = rep(NA, max(predicted$iteration))
-
-#Record results from quadratic model pcDensity ~ nestDensity + nestDensity^2
-interceptQuad = rep(NA, max(predicted$iteration))
-slopeQuad = rep(NA, max(predicted$iteration))
-slope2Quad = rep(NA, max(predicted$iteration))
-aicQuad = rep(NA, max(predicted$iteration))
-r2mQuad = rep(NA, max(predicted$iteration))
-r2cQuad = rep(NA, max(predicted$iteration))
-
-
-for(i in 1:length(intercept)){
-
-  print(i)
-
-  tmpData = pointData %>%
-    mutate(ests = modelSpAbund$N.samples[i,],
-           point = as.factor(as.character(point))) %>%
-  filter(!(year==2011 & propOverlap2011 < 0.8)) %>%
-  filter(!(year > 2011 & propOverlap2012_2014 < 0.8)) %>%
-    mutate(year = as.factor(as.character(year)))
-
-  model = lme4::glmer(ests ~ nests + (1|point) + (1|year), family=poisson, data=tmpData)
-  intercept[i] = coef(summary(model))[1,1]
-  slope[i] = coef(summary(model))[2,1]
-  aicLin[i] = AIC(model)
-  r2mLin[i] = r.squaredGLMM(model)[3,1]
-  r2cLin[i] = r.squaredGLMM(model)[3,2]
-
-  model2 = lme4::glmer(ests ~ nests + I(nests^2) + (1|point) + (1|year), family=poisson, data=tmpData)
-  interceptQuad[i] = coef(summary(model2))[1,1]
-  slopeQuad[i] = coef(summary(model2))[2,1]
-  slope2Quad[i] = coef(summary(model2))[3,1]
-  aicQuad[i] = AIC(model2)
-  r2mQuad[i] = r.squaredGLMM(model2)[3,1]
-  r2cQuad[i] = r.squaredGLMM(model2)[3,2]
-}
-
-
-pointRegResults = data.frame(
-  'intercept'=intercept,
-  'slope'=slope,
-  'interceptQuad'=interceptQuad,
-  'slopeQuad'=slopeQuad,
-  'slope2Quad'=slope2Quad,
-  'aicLin'=aicLin,
-  'aicQuad'=aicQuad,
-  'r2mLin'=r2mLin,
-  'r2cLin'=r2cLin,
-  'r2mQuad'=r2mQuad,
-  'r2cQuad'=r2cQuad
-)
-
-save(pointRegResults, file='pointRegResults.RData')
+# #Record results from linear model pcDensity ~ nestDensity
+# intercept = rep(NA, max(predicted$iteration))
+# slope = rep(NA, max(predicted$iteration))
+# aicLin = rep(NA, max(predicted$iteration))
+# r2mLin = rep(NA, max(predicted$iteration))
+# r2cLin = rep(NA, max(predicted$iteration))
+# 
+# #Record results from quadratic model pcDensity ~ nestDensity + nestDensity^2
+# interceptQuad = rep(NA, max(predicted$iteration))
+# slopeQuad = rep(NA, max(predicted$iteration))
+# slope2Quad = rep(NA, max(predicted$iteration))
+# aicQuad = rep(NA, max(predicted$iteration))
+# r2mQuad = rep(NA, max(predicted$iteration))
+# r2cQuad = rep(NA, max(predicted$iteration))
+# 
+# 
+# for(i in 1:length(intercept)){
+# 
+#   print(i)
+# 
+#   tmpData = pointData %>%
+#     mutate(ests = modelSpAbund$N.samples[i,],
+#            point = as.factor(as.character(point))) %>%
+#   filter(!(year==2011 & propOverlap2011 < 0.8)) %>%
+#   filter(!(year > 2011 & propOverlap2012_2014 < 0.8)) %>%
+#     mutate(year = as.factor(as.character(year)))
+# 
+#   model = lme4::glmer(ests ~ nests + (1|point) + (1|year), family=poisson, data=tmpData)
+#   intercept[i] = coef(summary(model))[1,1]
+#   slope[i] = coef(summary(model))[2,1]
+#   aicLin[i] = AIC(model)
+#   r2mLin[i] = r.squaredGLMM(model)[3,1]
+#   r2cLin[i] = r.squaredGLMM(model)[3,2]
+# 
+#   model2 = lme4::glmer(ests ~ nests + I(nests^2) + (1|point) + (1|year), family=poisson, data=tmpData)
+#   interceptQuad[i] = coef(summary(model2))[1,1]
+#   slopeQuad[i] = coef(summary(model2))[2,1]
+#   slope2Quad[i] = coef(summary(model2))[3,1]
+#   aicQuad[i] = AIC(model2)
+#   r2mQuad[i] = r.squaredGLMM(model2)[3,1]
+#   r2cQuad[i] = r.squaredGLMM(model2)[3,2]
+# }
+# 
+# 
+# pointRegResults = data.frame(
+#   'intercept'=intercept,
+#   'slope'=slope,
+#   'interceptQuad'=interceptQuad,
+#   'slopeQuad'=slopeQuad,
+#   'slope2Quad'=slope2Quad,
+#   'aicLin'=aicLin,
+#   'aicQuad'=aicQuad,
+#   'r2mLin'=r2mLin,
+#   'r2cLin'=r2cLin,
+#   'r2mQuad'=r2mQuad,
+#   'r2cQuad'=r2cQuad
+# )
+# 
+# save(pointRegResults, file='pointRegResults.RData')
 
 
 ```
@@ -751,6 +751,12 @@ slope=pointRegResults$slope
 
 mean(slope)
 quantile(slope, probs=c(0.025, 0.975))
+
+mean(pointRegResults$r2mLin)
+quantile(pointRegResults$r2mLin, probs=c(0.025, 0.975))
+
+mean(pointRegResults$r2cLin)
+quantile(pointRegResults$r2cLin, probs=c(0.025, 0.975))
 
 
 #Creating hypothetical values of true nest density to which to make predictions based on the fitted models.
@@ -813,9 +819,9 @@ pointLevelDens
 ```{r}
 
 
-jpeg('figure2.jpg', width=3.5, height=7, units='in', res=300)
-plot_grid(plotLevelDens, pointLevelDens, ncol=1)
-dev.off()
+# jpeg('figure2.jpg', width=3.5, height=7, units='in', res=300)
+# plot_grid(plotLevelDens, pointLevelDens, ncol=1)
+# dev.off()
 ```
 
 ## Section 2.5 \| Point counts as indicators of population growth
@@ -888,12 +894,16 @@ predicted = data.frame(t(predMCMC$mu.0.samples)) %>%
 # intercept = rep(NA, max(predicted$iteration))
 # slope = rep(NA, max(predicted$iteration))
 # aicLin = rep(NA, max(predicted$iteration))
+# r2mLin = rep(NA, max(predicted$iteration))
+# r2cLin = rep(NA, max(predicted$iteration))
 # 
 # #Record results from quadratic model pcLambda ~ nestLambda + nestLambda^2
 # interceptQuad = rep(NA, max(predicted$iteration))
 # slopeQuad = rep(NA, max(predicted$iteration))
 # slope2Quad = rep(NA, max(predicted$iteration))
 # aicQuad = rep(NA, max(predicted$iteration))
+# r2mQuad = rep(NA, max(predicted$iteration))
+# r2cQuad = rep(NA, max(predicted$iteration))
 # 
 # 
 #  for(i in 1:length(intercept)){
@@ -907,13 +917,16 @@ predicted = data.frame(t(predMCMC$mu.0.samples)) %>%
 #    intercept[i] = coef(summary(model))[1,1]
 #    slope[i] = coef(summary(model))[2,1]
 #    aicLin[i] = AIC(model)
-# 
+#    r2mLin[i] = r.squaredGLMM(model)[1]
+#    r2cLin[i] = r.squaredGLMM(model)[2]
 # 
 #    model2 = lm(pcEst ~ nestEst + I(nestEst^2), data=tmp)
 #    interceptQuad[i] = coef(summary(model2))[1,1]
 #    slopeQuad[i] = coef(summary(model2))[2,1]
 #    slope2Quad[i] = coef(summary(model2))[3,1]
 #    aicQuad[i] = AIC(model2)
+#    r2mLin[i] = r.squaredGLMM(model2)[1]
+#    r2cLin[i] = r.squaredGLMM(model2)[2]
 #  }
 # 
 # 
@@ -924,7 +937,11 @@ predicted = data.frame(t(predMCMC$mu.0.samples)) %>%
 #   'slopeQuad'=slopeQuad,
 #   'slope2Quad'=slope2Quad,
 #   'aicLin'=aicLin,
-#   'aicQuad'=aicQuad
+#   'aicQuad'=aicQuad,
+#   'r2mLin'=r2mLin,
+#   'r2cLin'=r2cLin,
+#   'r2mQuad'=r2mQuad,
+#   'r2cQuad'=r2cQuad
 # )
 # 
 # save(plotLamRegResults, file='plotLamRegResults.RData')
@@ -954,6 +971,12 @@ Plotting the relationship between estimated plot-level lambdas based on point co
 ```{r}
 intercept=plotLamRegResults$intercept
 slope=plotLamRegResults$slope
+
+mean(slope)
+quantile(slope, probs=c(0.025, 0.975))
+
+mean(plotLamRegResults$r2mLin)
+quantile(plotLamRegResults$r2mLin, probs=c(0.025, 0.975))
 
 #Creating hypothetical values of true lambdas to which to make predictions based on the fitted models.
 simLams = seq(0, 3, 0.1)
@@ -987,10 +1010,14 @@ plotComparison =  predicted %>%
             nestEst = max(nestEst)) %>% 
   ungroup() %>% 
   mutate(year = as.factor(year)) %>% 
-  rename('pcEst' = 'est')
+  rename('pcEst' = 'est') %>% 
+  mutate(year = recode(year, 'lambda2012'='Growth 2011-2012',
+                       'lambda2013'='Growth 2012-2013',
+                       'lambda2014'='Growth 2013-2014'))
+
 
 #Create the plot
-ggplot()+
+plotLevelLambda = ggplot()+
   geom_abline(intercept=0, slope=1, col='black', linetype='dashed')+
   geom_ribbon(data=regPreds, aes(x=lambda, ymin=lclPC, ymax=uclPC), alpha=0.2)+
   geom_line(data=regPreds, aes(x=lambda, y=predPC), color='black')+
@@ -998,11 +1025,24 @@ ggplot()+
   theme_bw()+
   theme(panel.grid=element_blank())+
   geom_errorbar(data=plotComparison, aes(x=nestEst, y=pcEst, color=plot, ymin=lcl, ymax=ucl))+
-  xlab('Lambda estimates based on ratio of nests found')+
-  ylab('Lambda estimates based on point count ratios')+
+  xlab('Nest ratio')+
+  ylab('Point count estimate')+
   theme(legend.position='bottom',
-        legend.box='vertical')
+        legend.box='vertical')+
+  theme(legend.position = c(0.25, 0.8),
+        legend.title=element_blank(),
+        legend.background=element_blank())+
+  guides(color='none')+
+  ggtitle('Plot level growth rate')
 
+plotLevelLambda
+
+```
+
+```{r}
+jpeg('figure3.jpg', width=3.5, height=3.5, units='in', res=300)
+plotLevelLambda
+dev.off()
 ```
 
 ## Section 2.6 \| Point counts as indicators of habitat quality
@@ -1050,10 +1090,14 @@ predicted = data.frame(t(predMCMC$mu.0.samples)) %>%
 
 # intercept = rep(NA, max(predicted$iteration))
 # slope = rep(NA, max(predicted$iteration))
+# r2mLin = rep(NA, max(predicted$iteration))
+# r2cLin = rep(NA, max(predicted$iteration))
 # 
 # interceptQuad = rep(NA, max(predicted$iteration))
 # slopeQuad = rep(NA, max(predicted$iteration))
 # slope2Quad = rep(NA, max(predicted$iteration))
+# r2mQuad = rep(NA, max(predicted$iteration))
+# r2cQuad = rep(NA, max(predicted$iteration))
 # 
 # aicLin = rep(NA, max(predicted$iteration))
 # aicQuad = rep(NA, max(predicted$iteration))
@@ -1068,6 +1112,8 @@ predicted = data.frame(t(predMCMC$mu.0.samples)) %>%
 #   intercept[i] = coef(summary(model))[1,1]
 #   slope[i] = coef(summary(model))[2,1]
 #   aicLin[i] = AIC(model)
+#   r2mLin[i] = r.squaredGLMM(model)[1]
+#   r2cLin[i] = r.squaredGLMM(model)[2]
 # 
 #   model2 = lme4::lmer(pcEst ~ fledglingDensity + I(fledglingDensity^2) + (1|plot) + (1|year), data=tmp)
 # 
@@ -1075,6 +1121,8 @@ predicted = data.frame(t(predMCMC$mu.0.samples)) %>%
 #   slopeQuad[i] = coef(summary(model2))[2,1]
 #   slope2Quad[i] = coef(summary(model2))[3,1]
 #   aicQuad[i] = AIC(model2)
+#   r2mQuad[i] = r.squaredGLMM(model2)[1]
+#   r2cQuad[i] = r.squaredGLMM(model2)[2]
 # }
 # 
 # 
@@ -1085,7 +1133,11 @@ predicted = data.frame(t(predMCMC$mu.0.samples)) %>%
 #   'slopeQuad'=slopeQuad,
 #   'slope2Quad'=slope2Quad,
 #   'aicLin'=aicLin,
-#   'aicQuad'=aicQuad
+#   'aicQuad'=aicQuad,
+#   'r2mLin'=r2mLin,
+#   'r2cLin'=r2cLin,
+#   'r2mQuad'=r2mQuad,
+#   'r2cQuad'=r2cQuad
 # )
 # 
 # save(plotFledgDensRegResults, file='plotFledgDensRegResults.RData')
@@ -1120,6 +1172,12 @@ Plotting the relationship between estimated plot-level densities based on point 
 intercept=plotFledgDensRegResults$intercept
 slope=plotFledgDensRegResults$slope
 
+mean(slope)
+quantile(slope, probs=c(0.025, 0.975))
+
+mean(plotFledgDensRegResults$r2mLin)
+quantile(plotFledgDensRegResults$r2mLin, probs=c(0.025, 0.975))
+
 simFledgDens = seq(0, 2, 0.05)
 ests = rep(NA, length(simFledgDens))
 lcl = rep(NA, length(simFledgDens))
@@ -1151,19 +1209,24 @@ plotComparison = predicted %>%
   rename('pcEst' = 'estimate')
 
 #Create the plot
-ggplot()+
+densityQuality = ggplot()+
   geom_ribbon(data=regPreds, aes(x=fledgDens, ymin=lclPC, ymax=uclPC), alpha=0.2)+
   geom_line(data=regPreds, aes(x=fledgDens, y=predPC), color='black')+
   geom_point(data=plotComparison, aes(x=fledgDens, y=pcEst, color=plot, pch=year))+
   theme_bw()+
   theme(panel.grid=element_blank())+
   geom_errorbar(data=plotComparison, aes(x=fledgDens, y=pcEst, color=plot, ymin=lcl, ymax=ucl))+
-  xlab('Fledglings per hectare')+
-  ylab('Density of Wood Thrush estimated by point count surveys')+
+  xlab('Fledglings density (per hectare)')+
+  ylab('Point count density estimates')+
   theme(legend.position='bottom',
-        legend.box='vertical')
+        legend.box='vertical')+
+  theme(legend.position = c(0.8, 0.8),
+        legend.title=element_blank(),
+        legend.background=element_blank())+
+  guides(color='none')+
+  ggtitle('(A) Density vs. habitat quality')
 
-
+densityQuality
 ```
 
 #### Now we are modeling point count lambda as a function of fledgling density
@@ -1216,13 +1279,16 @@ predicted = data.frame(t(predMCMC$mu.0.samples)) %>%
 # intercept = rep(NA, max(predicted$iteration))
 # slope = rep(NA, max(predicted$iteration))
 # aicLin = rep(NA, max(predicted$iteration))
+# r2mLin = rep(NA, max(predicted$iteration))
+# r2cLin = rep(NA, max(predicted$iteration))
 # 
 # #Record results from quadratic model pcLambda ~ nestLambda + nestLambda^2
 # interceptQuad = rep(NA, max(predicted$iteration))
 # slopeQuad = rep(NA, max(predicted$iteration))
 # slope2Quad = rep(NA, max(predicted$iteration))
 # aicQuad = rep(NA, max(predicted$iteration))
-# 
+# r2mQuad = rep(NA, max(predicted$iteration))
+# r2cQuad = rep(NA, max(predicted$iteration))
 # 
 #  for(i in 1:length(intercept)){
 # 
@@ -1235,13 +1301,16 @@ predicted = data.frame(t(predMCMC$mu.0.samples)) %>%
 #    intercept[i] = coef(summary(model))[1,1]
 #    slope[i] = coef(summary(model))[2,1]
 #    aicLin[i] = AIC(model)
-# 
+#    r2mLin[i] = r.squaredGLMM(model)[1]
+#    r2cLin[i] = r.squaredGLMM(model)[2]
 # 
 #    model2 = lm(pcEst ~ fledglingDensity + I(fledglingDensity^2), data=tmp)
 #    interceptQuad[i] = coef(summary(model2))[1,1]
 #    slopeQuad[i] = coef(summary(model2))[2,1]
 #    slope2Quad[i] = coef(summary(model2))[3,1]
 #    aicQuad[i] = AIC(model2)
+#    r2mQuad[i] = r.squaredGLMM(model2)[1]
+#    r2cQuad[i] = r.squaredGLMM(model2)[2]
 #  }
 # 
 # 
@@ -1252,7 +1321,12 @@ predicted = data.frame(t(predMCMC$mu.0.samples)) %>%
 #   'slopeQuad'=slopeQuad,
 #   'slope2Quad'=slope2Quad,
 #   'aicLin'=aicLin,
-#   'aicQuad'=aicQuad
+#   'aicQuad'=aicQuad,
+#   'aicQuad'=aicQuad,
+#   'r2mLin'=r2mLin,
+#   'r2cLin'=r2cLin,
+#   'r2mQuad'=r2mQuad,
+#   'r2cQuad'=r2cQuad
 # )
 # 
 # save(plotLamFledgDensResults, file='plotLamFledgDensResults.RData')
@@ -1283,6 +1357,12 @@ Plotting the relationship between estimated plot-level lambdas based on point co
 intercept=plotLamFledgDensResults$intercept
 slope=plotLamFledgDensResults$slope
 
+mean(slope)
+quantile(slope, probs=c(0.025, 0.975))
+
+mean(plotLamFledgDensResults$r2mLin)
+quantile(plotLamFledgDensResults$r2mLin, probs=c(0.025, 0.975))
+
 simFledgDens = seq(0, 2, 0.05)
 ests = rep(NA, length(simFledgDens))
 lcl = rep(NA, length(simFledgDens))
@@ -1311,24 +1391,37 @@ plotComparison =  predicted %>%
             fledgDens = max(fledglingDensity)) %>% 
   ungroup() %>% 
   mutate(year = as.factor(year)) %>% 
-  rename('pcEst' = 'est')
+  rename('pcEst' = 'est') %>% 
+  mutate(year = recode(year, 'lambda2012'='Growth 2011-2012',
+                       'lambda2013'='Growth 2012-2013',
+                       'lambda2014'='Growth 2013-2014'))
 
 #Create the plot
-ggplot()+
-  geom_abline(intercept=0, slope=1, col='black', linetype='dashed')+
+growthQuality = ggplot()+
   geom_ribbon(data=regPreds, aes(x=fledgDens, ymin=lclPC, ymax=uclPC), alpha=0.2)+
   geom_line(data=regPreds, aes(x=fledgDens, y=predPC), color='black')+
   geom_point(data=plotComparison, aes(x=fledgDens, y=pcEst, color=plot, pch=year))+
   theme_bw()+
   theme(panel.grid=element_blank())+
   geom_errorbar(data=plotComparison, aes(x=fledgDens, y=pcEst, color=plot, ymin=lcl, ymax=ucl))+
-  xlab('Fledgling density')+
-  ylab('Lambda estimates based on point count ratios')+
+  xlab('Fledgling density (per hectare)')+
+  ylab('Point count growth rate estimate')+
   theme(legend.position='bottom',
-        legend.box='vertical')
+        legend.box='vertical')+
+  theme(legend.position = c(0.7, 0.8),
+        legend.title=element_blank(),
+        legend.background=element_blank())+
+  guides(color='none')+
+  ggtitle('(B) Growth rate vs. habitat quality')
+
+growthQuality
 ```
 
 ```{r}
+
+jpeg('figure4.jpg', width=3.5, height=7, units='in', res=300)
+plot_grid(densityQuality, growthQuality, ncol=1)
+dev.off()
 
 ```
 
@@ -1447,49 +1540,61 @@ for(i in 1:nrow(pointData)){
 intercept = rep(NA, max(predicted$iteration))
 slope = rep(NA, max(predicted$iteration))
 aicLin = rep(NA, max(predicted$iteration))
+r2mLin = rep(NA, max(predicted$iteration))
+r2cLin = rep(NA, max(predicted$iteration))
 
 #Record results from quadratic model pcDensity ~ nestDensity + nestDensity^2
 interceptQuad = rep(NA, max(predicted$iteration))
 slopeQuad = rep(NA, max(predicted$iteration))
 slope2Quad = rep(NA, max(predicted$iteration))
 aicQuad = rep(NA, max(predicted$iteration))
+r2mQuad = rep(NA, max(predicted$iteration))
+r2cQuad = rep(NA, max(predicted$iteration))
 
 
-# for(i in 1:length(intercept)){
-# 
-#   print(i)
-# 
-#   tmpData = pointData %>%
-#     mutate(ests = modelSpAbund$N.samples[i,],
-#            point = as.factor(as.character(point))) %>%
-#   filter(!(year==2011 & propOverlap2011 < 0.8)) %>%
-#   filter(!(year > 2011 & propOverlap2012_2014 < 0.8)) %>%
-#     mutate(year = as.factor(as.character(year)))
-# 
-#   model = lme4::glmer(ests ~ nests + (1|point) + (1|year), family=poisson, data=tmpData)
-#   intercept[i] = coef(summary(model))[1,1]
-#   slope[i] = coef(summary(model))[2,1]
-#   aicLin[i] = AIC(model)
-# 
-#   model2 = lme4::glmer(ests ~ nests + I(nests^2) + (1|point) + (1|year), family=poisson, data=tmpData)
-#   interceptQuad[i] = coef(summary(model2))[1,1]
-#   slopeQuad[i] = coef(summary(model2))[2,1]
-#   slope2Quad[i] = coef(summary(model2))[3,1]
-#   aicQuad[i] = AIC(model2)
-# }
+for(i in 1:length(intercept)){
+
+  print(i)
+
+  tmpData = pointData %>%
+    mutate(ests = modelSpAbund$N.samples[i,],
+           point = as.factor(as.character(point))) %>%
+  filter(!(year==2011 & propOverlap2011 < 0.8)) %>%
+  filter(!(year > 2011 & propOverlap2012_2014 < 0.8)) %>%
+    mutate(year = as.factor(as.character(year)))
+
+  model = lme4::glmer(ests ~ nests + (1|point) + (1|year), family=poisson, data=tmpData)
+  intercept[i] = coef(summary(model))[1,1]
+  slope[i] = coef(summary(model))[2,1]
+  aicLin[i] = AIC(model)
+  r2mLin[i] = r.squaredGLMM(model)[3,1]
+  r2cLin[i] = r.squaredGLMM(model)[3,2]
+
+  model2 = lme4::glmer(ests ~ nests + I(nests^2) + (1|point) + (1|year), family=poisson, data=tmpData)
+  interceptQuad[i] = coef(summary(model2))[1,1]
+  slopeQuad[i] = coef(summary(model2))[2,1]
+  slope2Quad[i] = coef(summary(model2))[3,1]
+  aicQuad[i] = AIC(model2)
+  r2mQuad[i] = r.squaredGLMM(model2)[3,1]
+  r2cQuad[i] = r.squaredGLMM(model2)[3,2]
+}
 
 
-# pointRegResults1Week = data.frame(
-#   'intercept'=intercept,
-#   'slope'=slope,
-#   'interceptQuad'=interceptQuad,
-#   'slopeQuad'=slopeQuad,
-#   'slope2Quad'=slope2Quad,
-#   'aicLin'=aicLin,
-#   'aicQuad'=aicQuad
-# )
-# 
-# save(pointRegResults1Week, file='pointRegResults1Week.RData')
+pointRegResults1Week = data.frame(
+  'intercept'=intercept,
+  'slope'=slope,
+  'interceptQuad'=interceptQuad,
+  'slopeQuad'=slopeQuad,
+  'slope2Quad'=slope2Quad,
+  'aicLin'=aicLin,
+  'aicQuad'=aicQuad,
+  'r2mLin'=r2mLin,
+  'r2cLin'=r2cLin,
+  'r2mQuad'=r2mQuad,
+  'r2cQuad'=r2cQuad
+)
+
+save(pointRegResults1Week, file='pointRegResults1Week.RData')
 
 ```
 
@@ -1610,12 +1715,16 @@ for(i in 1:nrow(pointData)){
 intercept = rep(NA, max(predicted$iteration))
 slope = rep(NA, max(predicted$iteration))
 aicLin = rep(NA, max(predicted$iteration))
+r2mLin = rep(NA, max(predicted$iteration))
+r2cLin = rep(NA, max(predicted$iteration))
 
 #Record results from quadratic model pcDensity ~ nestDensity + nestDensity^2
 interceptQuad = rep(NA, max(predicted$iteration))
 slopeQuad = rep(NA, max(predicted$iteration))
 slope2Quad = rep(NA, max(predicted$iteration))
 aicQuad = rep(NA, max(predicted$iteration))
+r2mQuad = rep(NA, max(predicted$iteration))
+r2cQuad = rep(NA, max(predicted$iteration))
 
 
 # for(i in 1:length(intercept)){
@@ -1633,12 +1742,16 @@ aicQuad = rep(NA, max(predicted$iteration))
 #   intercept[i] = coef(summary(model))[1,1]
 #   slope[i] = coef(summary(model))[2,1]
 #   aicLin[i] = AIC(model)
+#   r2mLin[i] = r.squaredGLMM(model)[3,1]
+#   r2cLin[i] = r.squaredGLMM(model)[3,2]
 # 
 #   model2 = lme4::glmer(ests ~ nests + I(nests^2) + (1|point) + (1|year), family=poisson, data=tmpData)
 #   interceptQuad[i] = coef(summary(model2))[1,1]
 #   slopeQuad[i] = coef(summary(model2))[2,1]
 #   slope2Quad[i] = coef(summary(model2))[3,1]
 #   aicQuad[i] = AIC(model2)
+#   r2mQuad[i] = r.squaredGLMM(model2)[3,1]
+#   r2cQuad[i] = r.squaredGLMM(model2)[3,2]
 # }
 # 
 # 
@@ -1650,6 +1763,10 @@ aicQuad = rep(NA, max(predicted$iteration))
 #   'slope2Quad'=slope2Quad,
 #   'aicLin'=aicLin,
 #   'aicQuad'=aicQuad
+#   'r2mLin'=r2mLin,
+#   'r2cLin'=r2cLin,
+#   'r2mQuad'=r2mQuad,
+#   'r2cQuad'=r2cQuad
 # )
 # 
 # save(pointRegResults2Weeks, file='pointRegResults2Weeks.RData')
