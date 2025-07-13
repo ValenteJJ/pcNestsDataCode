@@ -1537,7 +1537,7 @@ modelSpAbund2 = DS(abund.formula= ~ plot + year + year*plot + (1|numPoint),
                  n.batch=6400, batch.length=25, accept.rate=0.43, family='Poisson', transect='point', det.func='halfnormal', n.burn=80000, n.thin=40, n.chains=3, inits=list(beta=coef(modelUnmarked)[1:48], alpha=c(4, coef(modelUnmarked)[69:71], 0)))
 
 
-save(modelSpAbund, file='modelSpAbund2.RData')
+save(modelSpAbund2, file='modelSpAbund2.RData')
 ```
 
 ```{r}
@@ -1669,6 +1669,9 @@ Plotting the relationship between estimated survey-level density based on point 
 intercept=pointRegResults1Week$intercept
 slope=pointRegResults1Week$slope
 
+mean(pointRegResults1Week$r2mLin)
+quantile(pointRegResults1Week$r2mLin, probs=c(0.025, 0.975))
+
 #Creating hypothetical values of true nest density to which to make predictions based on the fitted models.
 simNests = seq(0, 8, 0.25)
 ests = rep(NA, length(simNests))
@@ -1709,7 +1712,7 @@ pointComparison =  data.frame(pointData) %>%
          ucl = ucl/((pi*100^2)/10000))
 
 #Create the plot
-ggplot()+
+pointDens1Week = ggplot()+
   geom_abline(intercept=0, slope=1, col='black', linetype='dashed')+
   geom_ribbon(data=regPreds, aes(x=nestDens, ymin=lclPC, ymax=uclPC), alpha=0.2)+
   geom_line(data=regPreds, aes(x=nestDens, y=predPC), color='black')+
@@ -1717,10 +1720,19 @@ ggplot()+
   theme_bw()+
   theme(panel.grid=element_blank())+
   # geom_errorbar(data=pointComparison, aes(x=nests, y=estimate, ymin=lcl, ymax=ucl))+
-  xlab('True nest density 1 week later')+
-  ylab('Survey-level point count density estimates')+
+  xlab('True nest density (nests per ha) one week later')+
+  ylab('Point count density estimates')+
   theme(legend.position='bottom',
         legend.box='vertical')
+
+pointDens1Week
+```
+
+```{r}
+
+jpeg('figureS1.jpg', width=3.5, height=3.5, units='in', res=300)
+pointDens1Week
+dev.off()
 ```
 
 ## Figure S2 \| Point counts as indicators of future breeding activity 2 weeks later
