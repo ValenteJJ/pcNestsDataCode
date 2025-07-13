@@ -1501,6 +1501,53 @@ tmp = usableNests %>%
 
 ```
 
+## Section 4 \| Discussion
+
+Fitting a second version of the model in which true nest density is an explanatory variable for detection probability.
+
+```{r}
+
+y2 = surveys %>% 
+  select(point, date, time, year) %>% 
+  crossing(woth %>% select(distanceCat), by=NULL) %>% 
+  full_join(woth, by=c('point', 'date', 'time', 'distanceCat')) %>% 
+  mutate(count = ifelse(is.na(count), 0, count)) %>% 
+  pivot_wider(names_from = distanceCat, values_from = count) %>% 
+  full_join(pointData %>% select(year, point, date, nests, propOverlap2011, propOverlap2012_2014), by=c('year', 'point', 'date')) %>% 
+  filter(!(year==2011 & propOverlap2011 < 0.8)) %>%
+  filter(!(year > 2011 & propOverlap2012_2014 < 0.8)) %>% 
+  arrange(year, point, date, time) %>% 
+  select(-year, -point, -date, -time, -nests, -propOverlap2011, -propOverlap2012_2014, -geometry) %>% 
+  as.matrix()
+
+siteVars2 = siteVars %>% 
+  mutate(year = as.numeric(as.character(year))) %>% 
+  full_join(pointData %>% select(year, point, date, nests, propOverlap2011, propOverlap2012_2014), by=c('year', 'point', 'date')) %>% 
+  filter(!(year==2011 & propOverlap2011 < 0.8)) %>%
+  filter(!(year > 2011 & propOverlap2012_2014 < 0.8)) %>% 
+  mutate(year = as.factor(as.character(year))) %>% 
+  arrange(year, point, date, time) %>% 
+  select(plot, year, numPoint, scaleDoy, scaleTime, nests, numObserver)
+
+
+analysisSpAbund2 = list('y' = y2, 'covs' = siteVars2, 'dist.breaks'=c(0, 20, 40, 60, 80, 100), 'offset'=pi)
+
+modelSpAbund2 = DS(abund.formula= ~ plot + year + year*plot + (1|numPoint),
+                 det.formula= ~ scaleDoy + scaleTime + I(scaleTime^2) + nests + (1|numObserver), data=analysisSpAbund2,
+                 n.batch=6400, batch.length=25, accept.rate=0.43, family='Poisson', transect='point', det.func='halfnormal', n.burn=80000, n.thin=40, n.chains=3, inits=list(beta=coef(modelUnmarked)[1:48], alpha=c(4, coef(modelUnmarked)[69:71], 0)))
+
+
+save(modelSpAbund, file='modelSpAbund2.RData')
+```
+
+```{r}
+ggplot(quality, aes(x=nestDensity, y=fledglingDensity))+
+  geom_point()+
+  geom_smooth()+
+  theme_bw()+
+  theme(panel.grid=element_blank())
+```
+
 ## Figure S1 \| Point counts as indicators of future breeding activity 1 week later
 
 ```{r}
@@ -1536,65 +1583,65 @@ for(i in 1:nrow(pointData)){
 }
 
 
-#Record results from linear model pcDensity ~ nestDensity
-intercept = rep(NA, max(predicted$iteration))
-slope = rep(NA, max(predicted$iteration))
-aicLin = rep(NA, max(predicted$iteration))
-r2mLin = rep(NA, max(predicted$iteration))
-r2cLin = rep(NA, max(predicted$iteration))
-
-#Record results from quadratic model pcDensity ~ nestDensity + nestDensity^2
-interceptQuad = rep(NA, max(predicted$iteration))
-slopeQuad = rep(NA, max(predicted$iteration))
-slope2Quad = rep(NA, max(predicted$iteration))
-aicQuad = rep(NA, max(predicted$iteration))
-r2mQuad = rep(NA, max(predicted$iteration))
-r2cQuad = rep(NA, max(predicted$iteration))
-
-
-for(i in 1:length(intercept)){
-
-  print(i)
-
-  tmpData = pointData %>%
-    mutate(ests = modelSpAbund$N.samples[i,],
-           point = as.factor(as.character(point))) %>%
-  filter(!(year==2011 & propOverlap2011 < 0.8)) %>%
-  filter(!(year > 2011 & propOverlap2012_2014 < 0.8)) %>%
-    mutate(year = as.factor(as.character(year)))
-
-  model = lme4::glmer(ests ~ nests + (1|point) + (1|year), family=poisson, data=tmpData)
-  intercept[i] = coef(summary(model))[1,1]
-  slope[i] = coef(summary(model))[2,1]
-  aicLin[i] = AIC(model)
-  r2mLin[i] = r.squaredGLMM(model)[3,1]
-  r2cLin[i] = r.squaredGLMM(model)[3,2]
-
-  model2 = lme4::glmer(ests ~ nests + I(nests^2) + (1|point) + (1|year), family=poisson, data=tmpData)
-  interceptQuad[i] = coef(summary(model2))[1,1]
-  slopeQuad[i] = coef(summary(model2))[2,1]
-  slope2Quad[i] = coef(summary(model2))[3,1]
-  aicQuad[i] = AIC(model2)
-  r2mQuad[i] = r.squaredGLMM(model2)[3,1]
-  r2cQuad[i] = r.squaredGLMM(model2)[3,2]
-}
-
-
-pointRegResults1Week = data.frame(
-  'intercept'=intercept,
-  'slope'=slope,
-  'interceptQuad'=interceptQuad,
-  'slopeQuad'=slopeQuad,
-  'slope2Quad'=slope2Quad,
-  'aicLin'=aicLin,
-  'aicQuad'=aicQuad,
-  'r2mLin'=r2mLin,
-  'r2cLin'=r2cLin,
-  'r2mQuad'=r2mQuad,
-  'r2cQuad'=r2cQuad
-)
-
-save(pointRegResults1Week, file='pointRegResults1Week.RData')
+# #Record results from linear model pcDensity ~ nestDensity
+# intercept = rep(NA, max(predicted$iteration))
+# slope = rep(NA, max(predicted$iteration))
+# aicLin = rep(NA, max(predicted$iteration))
+# r2mLin = rep(NA, max(predicted$iteration))
+# r2cLin = rep(NA, max(predicted$iteration))
+# 
+# #Record results from quadratic model pcDensity ~ nestDensity + nestDensity^2
+# interceptQuad = rep(NA, max(predicted$iteration))
+# slopeQuad = rep(NA, max(predicted$iteration))
+# slope2Quad = rep(NA, max(predicted$iteration))
+# aicQuad = rep(NA, max(predicted$iteration))
+# r2mQuad = rep(NA, max(predicted$iteration))
+# r2cQuad = rep(NA, max(predicted$iteration))
+# 
+# 
+# for(i in 1:length(intercept)){
+# 
+#   print(i)
+# 
+#   tmpData = pointData %>%
+#     mutate(ests = modelSpAbund$N.samples[i,],
+#            point = as.factor(as.character(point))) %>%
+#   filter(!(year==2011 & propOverlap2011 < 0.8)) %>%
+#   filter(!(year > 2011 & propOverlap2012_2014 < 0.8)) %>%
+#     mutate(year = as.factor(as.character(year)))
+# 
+#   model = lme4::glmer(ests ~ nests + (1|point) + (1|year), family=poisson, data=tmpData)
+#   intercept[i] = coef(summary(model))[1,1]
+#   slope[i] = coef(summary(model))[2,1]
+#   aicLin[i] = AIC(model)
+#   r2mLin[i] = r.squaredGLMM(model)[3,1]
+#   r2cLin[i] = r.squaredGLMM(model)[3,2]
+# 
+#   model2 = lme4::glmer(ests ~ nests + I(nests^2) + (1|point) + (1|year), family=poisson, data=tmpData)
+#   interceptQuad[i] = coef(summary(model2))[1,1]
+#   slopeQuad[i] = coef(summary(model2))[2,1]
+#   slope2Quad[i] = coef(summary(model2))[3,1]
+#   aicQuad[i] = AIC(model2)
+#   r2mQuad[i] = r.squaredGLMM(model2)[3,1]
+#   r2cQuad[i] = r.squaredGLMM(model2)[3,2]
+# }
+# 
+# 
+# pointRegResults1Week = data.frame(
+#   'intercept'=intercept,
+#   'slope'=slope,
+#   'interceptQuad'=interceptQuad,
+#   'slopeQuad'=slopeQuad,
+#   'slope2Quad'=slope2Quad,
+#   'aicLin'=aicLin,
+#   'aicQuad'=aicQuad,
+#   'r2mLin'=r2mLin,
+#   'r2cLin'=r2cLin,
+#   'r2mQuad'=r2mQuad,
+#   'r2cQuad'=r2cQuad
+# )
+# 
+# save(pointRegResults1Week, file='pointRegResults1Week.RData')
 
 ```
 
