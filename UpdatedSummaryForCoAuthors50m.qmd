@@ -1,0 +1,268 @@
+---
+title: "UpdatedSummaryForCoAuthors"
+format: html
+editor: visual
+---
+
+```{r, echo=F, warning=F, message=F, fig.cap="FIG 3. The relationship between year-by-plot level densities estimated from the fitted point count model and the true density of active nests on plots. The solid black line is the fitted regression line with bootstrapped confidence intervals. The dashed black line is a 1:1 line indicating identical density estimates from the point counts and nests."}
+
+predDf = expand.grid(plot = unique(siteVarsAnalysis$plot),
+                            year = unique(siteVarsAnalysis$year)) %>% 
+  mutate(plot = as.character(plot))
+
+mm = model.matrix(~plot + year + year*plot, data=predDf)
+
+predMCMC = predict(finalModel3, mm, ignore.RE=T)
+
+# predicted = data.frame(predMCMC$mu.0.samples)
+
+tmp = t(predMCMC$mu.0.samples)
+
+
+predicted = data.frame(t(predMCMC$mu.0.samples)) %>% 
+  mutate(plot = predDf$plot, year = predDf$year) %>% 
+  pivot_longer(cols=c(-plot, -year), names_to='iteration') %>% 
+  mutate(iteration = str_replace(iteration, 'X', '')) %>% 
+  mutate(iteration = as.numeric(as.character(iteration))) %>% 
+  mutate(year = as.integer(as.character(year))) %>% 
+  mutate(plot = as.character(plot)) %>% 
+  mutate(plot = ifelse(plot=="McCormick's Creek", "McCormicks Creek", plot))
+
+
+intercept = rep(NA, max(predicted$iteration))
+slope = rep(NA, max(predicted$iteration))
+
+interceptQuad = rep(NA, max(predicted$iteration))
+slopeQuad = rep(NA, max(predicted$iteration))
+slope2Quad = rep(NA, max(predicted$iteration))
+
+aicLin = rep(NA, max(predicted$iteration))
+aicQuad = rep(NA, max(predicted$iteration))
+
+# 
+# for(i in 1:max(predicted$iteration)){
+#   print(i)
+#   tmp = predicted %>%
+#     filter(iteration==i) %>%
+#     left_join(dailyNests, by=c('plot', 'year'))
+# 
+#   model = lme4::lmer(value ~ meanNestDensity + (1|plot) + (1|year), data=tmp)
+#   intercept[i] = coef(summary(model))[1,1]
+#   slope[i] = coef(summary(model))[2,1]
+#   aicLin[i] = AIC(model)
+# 
+#   model2 = lme4::lmer(value ~ meanNestDensity + I(meanNestDensity^2) + (1|plot) + (1|year), data=tmp)
+# 
+#   interceptQuad[i] = coef(summary(model2))[1,1]
+#   slopeQuad[i] = coef(summary(model2))[2,1]
+#   slope2Quad[i] = coef(summary(model2))[3,1]
+#   aicQuad[i] = AIC(model2)
+# }
+# 
+# 
+# plotRegResults = data.frame(
+#   'intercept'=intercept,
+#   'slope'=slope,
+#   'interceptQuad'=interceptQuad,
+#   'slopeQuad'=slopeQuad,
+#   'slope2Quad'=slope2Quad,
+#   'aicLin'=aicLin,
+#   'aicQuad'=aicQuad
+# )
+# 
+# save(plotRegResults, file='storedResults/plotRegResults_50.RData')
+
+load('storedResults/plotRegResults_50.RData')
+intercept=plotRegResults$intercept
+slope=plotRegResults$slope
+interceptQuad=plotRegResults$interceptQuad
+slopeQuad=plotRegResults$slopeQuad
+slope2Quad=plotRegResults$slope2Quad
+
+
+# sum(plotRegResults$aicLin < plotRegResults$aicQuad)
+
+simNests = seq(0, 0.5, 0.01)
+
+ests = rep(NA, length(simNests))
+lcl = rep(NA, length(simNests))
+ucl = rep(NA, length(simNests))
+
+for(i in 1:length(simNests)){
+  tmp = interceptQuad + slopeQuad*simNests[i] + slope2Quad*simNests[i]*simNests[i]
+  ests[i] = mean(tmp)
+  lcl[i] = quantile(tmp, probs=0.025)
+  ucl[i] = quantile(tmp, probs=0.975)
+}
+
+regPreds = data.frame(
+  'nests' = simNests,
+  'predPC' = ests,
+  'lclPC' = lcl,
+  'uclPC' = ucl
+)
+
+plotComparison = predicted %>% 
+  group_by(plot, year) %>% 
+  summarise(estimate = mean(value),
+         lcl = quantile(value, probs=0.025),
+         ucl = quantile(value, probs=0.975)) %>% 
+  ungroup() %>% 
+  full_join(dailyNests, by=c('plot', 'year')) %>% 
+  mutate(year = as.factor(year))
+
+
+ggplot()+
+  geom_abline(intercept=0, slope=1, col='black', linetype='dashed')+
+  geom_ribbon(data=regPreds, aes(x=nests, ymin=lcl, ymax=ucl), alpha=0.2)+
+  geom_line(data=regPreds, aes(x=nests, y=predPC), color='black')+
+  geom_point(data=plotComparison, aes(x=meanNestDensity, y=estimate, color=plot, pch=year))+
+  theme_bw()+
+  theme(panel.grid=element_blank())+
+  geom_errorbar(data=plotComparison, aes(x=meanNestDensity, y=estimate, color=plot, ymin=lcl, ymax=ucl))+
+  xlab('Density of active nests on plot during point count period')+
+  ylab('Density of Wood Thrush estimated by point count surveys')+
+  theme(legend.position='bottom',
+        legend.box='vertical')
+```
+
+```{r, echo=F, warning=F, message=F, fig.cap="FIG 4. The relationship between survey-specific estimates of density from the fitted point count model and the true density of active nests within 100 m of the point count station at the time the survey was conducted. The solid black line is the fitted regression line with bootstrapped confidence intervals. The dashed black line is a 1:1 line indicating identical density estimates from the point counts and nests."}
+
+pcOverlap = read.csv('PC overlap with Demo plots.csv') %>%
+  select(-X)
+
+pointLocs = analysisData2$covs %>% 
+  select(point, date, year, plot, julian) %>% 
+  left_join(locations.og %>% select(point, utmX, utmY), by='point') %>% 
+  st_as_sf(coords=c('utmX', 'utmY'), crs=crs(plotLocs)) %>%
+  mutate(year = as.numeric(as.character(year))) %>%
+  left_join(pcOverlap, by='point') %>%
+  mutate(nests = NA) 
+  
+pointLocsBuff = st_buffer(pointLocs, 50) %>%
+  mutate(date = pointLocs$date,
+         julian = pointLocs$julian)
+
+nestLocs = nestsSpaceTime %>%
+  st_as_sf(coords=c('X', 'Y'), crs=crs(pointLocsBuff)) %>%
+  mutate(year = as.numeric(year)) %>% 
+  rename(nestYear = year)
+
+for(i in 1:nrow(pointLocs)){
+  pc = pointLocsBuff[i,]
+  nests = st_intersection(pc, nestLocs) %>%
+    filter(year==nestYear & clutchInitiation <= julian & fledgefail >= julian)
+  pointLocs$nests[i] = nrow(nests)
+}
+
+
+# intercept = rep(NA, max(predicted$iteration))
+# slope = rep(NA, max(predicted$iteration))
+# 
+# interceptQuad = rep(NA, max(predicted$iteration))
+# slopeQuad = rep(NA, max(predicted$iteration))
+# slope2Quad = rep(NA, max(predicted$iteration))
+# 
+# aicLin = rep(NA, max(predicted$iteration))
+# aicQuad = rep(NA, max(predicted$iteration))
+# 
+# 
+# tmp = analysisData2$covs
+# 
+# all(tmp$date==pointLocs$date)
+# 
+# 
+# 
+# for(i in 1:max(predicted$iteration)){
+#   print(i)
+#   tmp = pointLocs %>%
+#     mutate(ests = finalModel3$N.samples[i,],
+#            point = as.factor(as.character(point))) %>%
+#   filter(!(year==2011 & percOverlap2011 < 0.8)) %>%
+#   filter(!(year > 2011 & percOverlap2012 < 0.8)) %>%
+#     mutate(year = as.factor(as.character(year)))
+# 
+#   model = lme4::glmer(ests ~ nests + (1|point) + (1|year), family=poisson, data=tmp)
+#   intercept[i] = coef(summary(model))[1,1]
+#   slope[i] = coef(summary(model))[2,1]
+# 
+#   model2 = lme4::glmer(ests ~ nests + I(nests^2) + (1|point) + (1|year), family=poisson, data=tmp)
+#   interceptQuad[i] = coef(summary(model2))[1,1]
+#   slopeQuad[i] = coef(summary(model2))[2,1]
+#   slope2Quad[i] = coef(summary(model2))[3,1]
+# 
+#   aicLin[i] = AIC(model)
+#   aicQuad[i] = AIC(model2)
+# }
+# 
+# 
+# pointRegResults = data.frame(
+#   'intercept'=intercept,
+#   'slope'=slope,
+#   'interceptQuad'=interceptQuad,
+#   'slopeQuad'=slopeQuad,
+#   'slope2Quad'=slope2Quad,
+#   'aicLin'=aicLin,
+#   'aicQuad'=aicQuad
+# )
+# 
+# save(pointRegResults, file='storedResults/pointRegResults_50.RData')
+
+
+
+load('storedResults/pointRegResults_50.RData')
+intercept=pointRegResults$intercept
+slope=pointRegResults$slope
+
+# sum(pointRegResults$aicLin < pointRegResults$aicQuad)
+
+simNests = seq(0, 4, 0.05)
+
+ests = rep(NA, length(simNests))
+lcl = rep(NA, length(simNests))
+ucl = rep(NA, length(simNests))
+
+for(i in 1:length(simNests)){
+  tmp = intercept + slope*simNests[i]
+  ests[i] = exp(mean(tmp))
+  lcl[i] = exp(quantile(tmp, probs=0.025))
+  ucl[i] = exp(quantile(tmp, probs=0.975))
+}
+
+
+regPreds = data.frame(
+  'nests' = simNests,
+  'predPC' = ests,
+  'lclPC' = lcl,
+  'uclPC' = ucl
+) %>% 
+  mutate(nestDens = simNests/((pi*100^2)/10000),
+         predPC = predPC/((pi*100^2)/10000),
+         lclPC = lclPC/((pi*100^2)/10000),
+         uclPC = uclPC/((pi*100^2)/10000))
+
+
+pointComparison =  data.frame(pointLocs) %>% 
+  mutate(estimate = colMeans(finalModel3$N.samples, na.rm=T),
+         lcl = apply(finalModel3$N.samples, 2, quantile, probs=0.025, na.rm=T),
+         ucl = apply(finalModel3$N.samples, 2, quantile, probs=0.975, na.rm=T)) %>% 
+  filter(!(year==2011 & percOverlap2011 < 0.8)) %>%
+  filter(!(year > 2011 & percOverlap2012 < 0.8)) %>% 
+  mutate(nestDens = nests/((pi*100^2)/10000),
+         estimate = estimate/((pi*100^2)/10000),
+         lcl = lcl/((pi*100^2)/10000),
+         ucl = ucl/((pi*100^2)/10000))
+
+ggplot()+
+  geom_abline(intercept=0, slope=1, col='black', linetype='dashed')+
+  geom_ribbon(data=regPreds, aes(x=nestDens, ymin=lclPC, ymax=uclPC), alpha=0.2)+
+  geom_line(data=regPreds, aes(x=nestDens, y=predPC), color='black')+
+  geom_point(data=pointComparison, aes(x=nestDens, y=estimate), alpha=0.2)+
+  theme_bw()+
+  theme(panel.grid=element_blank())+
+  # geom_errorbar(data=pointComparison, aes(x=nests, y=estimate, ymin=lcl, ymax=ucl))+
+  xlab('Density of active nests within 100 m of point during survey')+
+  ylab('Survey-specific PC estimate of WOTH density within 100 m of point')+
+  theme(legend.position='bottom',
+        legend.box='vertical')
+```

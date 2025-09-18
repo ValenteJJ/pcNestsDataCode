@@ -1,0 +1,2261 @@
+---
+title: "UpdatedSummaryForCoAuthors"
+format: pdf
+editor: visual
+---
+
+# Catch-up
+
+Sorry for the delay, but frankly the re-analysis of this dataset in a Bayesian framework has taken a decent effort. That said, let's catch ourselves up. After the last iteration of this document, I received some feedback from Matt and Callie about analytical updates. These included:
+
+1.  I should include site random effects into our distance sampling models because, frankly, that's the right way to do it.
+
+2.  We should consider comparing point count metrics with total fledglings (rather than per capita fledged) as a metric of habitat quality.
+
+3.  We should consider using a finer spatial extent for the point count data. We are using surveys out to 100 m, but 50 m radius samples are often used in point counts.
+
+4.  Given that birds are often most vocal before nesting, we should consider comparing nest densities with WOTH point count densities recorded 1-2 weeks earlier.
+
+I've now re-written the model in a Bayesian framework and conducted all analyses suggested. Let's take a look...
+
+# Journal
+
+I'd like to shoot high and work our way back to *Ornithological Applications* if necessary. I'm thinking *Ecological Indicators*, *Ecology*, *Journal of Applied Ecology*, or *Ecological Applications*. But of course, I'm open to thoughts.
+
+# Introduction
+
+-   The world is experiencing rapid changes and funds for monitoring/conservation/management are limited.
+    -   Cheap, easy, and accurate methods for assessing changes in biological communities are critical.
+-   Birds are critical for supporting healthy ecosystems, and yet have been on the decline.
+    -   Commonly used methods for tracking productivity (intensive demographic monitoring) are often time and cost prohibitive
+    -   Cheaper and easier methods would be very useful.
+-   Point counts are one possible solution.
+    -   They are cheap and easy, and are becoming cheaper and easier with new technology and auto-ID capabilities.
+    -   If point counts can be a reasonable surrogate for reproductive activity or output, that would be very useful.
+-   Several techniques have been developed for generating unbiased abundance estimates from point count data
+    -   Tools such as distance models and N-Mixture models have been demonstrated to be accurate for estimating density and abundance using data simulations.
+    -   However, these tools typically sample all birds (heavily weighted towards singing males) and to what extent they can be useful for quantifying reproductive activity is unknown.
+-   There are several reasons to hypothesize a disconnect between birds counted and reproductive activity.
+    -   Floater males
+    -   Not all singing males actually make a nest
+    -   Not all nests are actually productive
+    -   One male could have multiple nests throughout the season
+-   In this study, we test the following hypotheses:
+    -   Avian point counts are reasonable proxies for reproductive activity
+    -   Avian point counts are reasonable proxies for habitat quality
+
+# Methods
+
+### Field methods
+
+-   In 2011 we established 12 demographic plots across southern Indiana
+-   For four years (2011-2014), we found every Wood Thrush nest on those 12 plots and monitored them to record success and number of fledglings.
+    -   Monitoring took place from mid-April until about the first week of August.
+-   Simultaneously, we did avian point counts at stations overlaid in a grid pattern (200 m apart) on those plots.
+    -   Point counts took place from late May to mid-July.
+-   The map below shows the study region, plot locations, a zoom-in on one plot, and a zoom-in on one point count station.
+
+```{r Map, echo=F, warning=F, message=F, fig.cap="FIG 1. This is the start of a figure in the manuscript. Admittedly, the map needs a bit of work, but you get the gist."}
+
+rm(list=ls())
+
+# update.packages('tidyterra')
+# install.packages('terra')
+
+
+require(unmarked)
+require(terrainr)
+require(tidyterra)
+require(cowplot)
+require(ggnewscale)
+require(ggspatial)
+require(sf)
+require(tigris)
+require(terra)
+require(FedData)
+require(tidyverse)
+require(spAbundance)
+
+demoPlots = st_read('GISData/2012_Demographic_Plots_shape.shp', quiet=T)
+
+studyArea = st_bbox(demoPlots)
+studyArea = studyArea + c(-10000, -10000, 10000, 10000)
+studyArea = st_sf(st_as_sfc(studyArea))
+# st_write(studyArea, 'studyArea.shp')
+
+# indiana = states(resolution='5m') %>% 
+#   filter(NAME=='Indiana')
+# st_write(indiana, 'indianaBoundary.shp')
+indiana = st_read('GISData/indianaBoundary.shp', quiet=T)
+indiana = st_transform(indiana, st_crs(studyArea))
+indianaCropped = st_intersection(indiana, studyArea)
+
+state = ggplot()+
+  geom_sf(data = indiana)+
+  geom_sf(data = studyArea, fill=NA, color='red')+
+  theme_bw()+ #Gets rid of most of the colors
+  theme(panel.grid=element_blank(), #Removes the gridlines
+        axis.text=element_blank(), #Removes the axis text
+        axis.ticks=element_blank(), #Removes the axis tick marks
+        panel.border=element_blank()) #Removes the frame around the graph
+
+
+
+# croppedNLCD = get_nlcd(studyArea,
+#                        label=countyName,
+#                        year = nlcdYear,
+#                        dataset = "landcover",
+#                        landmass = landMass,
+#                        extraction.dir = file.path(directoryForStorage, "FedData", "extractions", "nlcd"),
+#                        raster.options = c("COMPRESS=DEFLATE", "ZLEVEL=9"),
+#                        force.redo = TRUE
+# )
+# 
+# # tmp = st_transform(studyArea, crs(croppedNLCD))
+# # plot(croppedNLCD)
+# # plot(tmp, add=T, col='red')
+# 
+# reclassifyValues = matrix(c(11, 0,
+#                             12, 0,
+#                             21, 0,
+#                             22, 0,
+#                             23, 0,
+#                             24, 0,
+#                             31, 0,
+#                             41, 1,
+#                             42, 1,
+#                             43, 1,
+#                             51, 0,
+#                             52, 0,
+#                             71, 0,
+#                             72, 0,
+#                             73, 0,
+#                             74, 0,
+#                             81, 0,
+#                             82, 0,
+#                             90, 0,
+#                             95, 0), ncol=2, byrow=T)
+# 
+# forest = classify(croppedNLCD, rcl=reclassifyValues)
+# forest = project(forest, crs(studyArea))
+# tmp = data.frame('ID' = c(0, 1), 'category' = c('Non-forest', 'Forest'))
+# forest = categories(forest, value=tmp)
+# 
+# writeRaster(forest, 'forestCover.tif', overwrite=T)
+
+forest = rast('GISData/forestCover.tif')
+indianaCropped = st_transform(indianaCropped, crs(forest))
+forest = mask(forest, indianaCropped)
+forest = crop(forest, indianaCropped)
+
+plotLocs = st_centroid(demoPlots)
+plotLocs = st_transform(plotLocs, crs(forest))
+plotLocs$plot = 'Demographic plot'
+
+region = ggplot()+
+  geom_sf(data=indianaCropped, color='black')+
+  tidyterra::geom_spatraster(data=forest)+
+  scale_fill_manual(values=c('Forest' = 'darkolivegreen', 'Non-forest'='lightgray'), na.value='white', name='', na.translate=F)+
+  scale_y_continuous(expand=c(0,0))+
+  scale_x_continuous(expand=c(0,0))+
+  xlab('Longitude')+
+  ylab('Latitude')+
+  theme(panel.background=element_rect(fill='white'))+
+  theme(panel.grid=element_blank())+
+  geom_sf(data=plotLocs, aes(pch=plot), fill='orange', size=3)+
+  scale_shape_manual(values=24, name='')+
+  theme(legend.position='none')
+
+area58 = demoPlots %>% 
+  filter(IDENT=='AR58')
+area58Broad = st_bbox(area58)
+area58Broad = area58Broad + c(-200, -200, 200, 200)
+area58Broad = st_sf(st_as_sfc(area58Broad))
+
+
+# mapImage = rast('GISData/area58Imagery/m_3808513_nw_16_1_20140627.tif')
+# area58Broad = st_transform(area58Broad, crs(mapImage))
+# mapImage = crop(mapImage, area58Broad)
+# writeRaster(mapImage, 'GISData/area58Imagery/croppedToPlot.tif')
+mapImage = rast('GISData/area58Imagery/croppedToPlot.tif')
+names(mapImage) = c('lyr1', 'lyr2', 'lyr3', 'lyr4')
+
+
+
+pc58 = read.csv('locations.csv')
+pc58 = st_as_sf(pc58, coords=c('utmX', 'utmY'), crs=crs(plotLocs)) %>% filter(plot=='Area 58')
+pc58 = st_transform(pc58, crs(mapImage))
+
+tmp = fortify(mapImage)
+
+plotPic = ggplot()+
+    geom_spatial_rgb(data=tmp, aes(x=x, y=y, r=lyr1, g=lyr2, b=lyr3))+
+  scale_y_continuous(expand=c(0,0))+
+  scale_x_continuous(expand=c(0,0))+
+  geom_sf(data=area58, color='orange', linewidth=2, fill=NA)+
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title=element_blank())+
+  geom_sf(data=pc58, size=2, color='yellow')+
+  annotation_scale(location='br', bar_cols=c('gray', 'white'), text_col='white', width_hint=0.5)+
+  theme(legend.position='none')
+
+
+
+point = pc58[1,]
+areaPoint = st_bbox(point)
+areaPoint = areaPoint + c(-150, -150, 150, 150)
+areaPoint = st_sf(st_as_sfc(areaPoint))
+
+pointBuff = st_buffer(point, 100)
+
+pointImage = crop(mapImage, areaPoint)
+tmp = fortify(pointImage)
+
+nests.og = read.csv('wothNestingData.csv')
+nestsSpatial = st_as_sf(nests.og, coords=c('GPS.E', 'GPS.N'), crs=26916)
+nestsSpatial = st_transform(nestsSpatial, crs(pointImage))
+nestsSpatial = st_intersection(nestsSpatial, areaPoint) %>% 
+  mutate(year = as.factor(as.character(year))) %>% 
+  filter(year=='2011')
+
+
+
+pointPic = ggplot()+
+    geom_spatial_rgb(data=tmp, aes(x=x, y=y, r=lyr1, g=lyr2, b=lyr3))+
+  scale_y_continuous(expand=c(0,0))+
+  scale_x_continuous(expand=c(0,0))+
+  geom_sf(data=pointBuff, color='yellow', linewidth=2, fill=NA)+
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title=element_blank())+
+  geom_sf(data=point, size=2, color='yellow')+
+  geom_sf(data=nestsSpatial, color='bisque2', pch=4, size=3, stroke=2)+
+  annotation_scale(location='br', bar_cols=c('gray', 'white'), text_col='white', width_hint=0.5)+
+  theme(legend.position='none')
+
+
+
+pc58 = pc58 %>% 
+  mutate(lab = 'Point count station')
+nestsSpatial = nestsSpatial %>% 
+  mutate(lab = 'Nest location')
+
+forLegend = ggplot()+
+  geom_sf(data=indianaCropped, color='black')+
+  geom_spatraster(data=forest)+
+  scale_fill_manual(values=c('Forest' = 'darkolivegreen', 'Non-forest'='lightgray'), na.value='white', name='', na.translate=F)+
+  theme(panel.background=element_rect(fill='white'))+
+  theme(panel.grid=element_blank())+
+  geom_sf(data=plotLocs, aes(pch=plot), fill='orange', size=3)+
+  scale_shape_manual(values=24, name='')+
+  geom_sf(data=pc58, aes(color=lab), size=2)+
+  scale_color_manual(values='yellow', name='')+
+  new_scale_color()+
+  geom_sf(data=nestsSpatial, aes(color=lab), pch=4, size=3, stroke=2)+
+  scale_color_manual(values='bisque2', name='')+
+  # theme(legend.direction='horizontal')
+  theme(legend.position='bottom')
+
+a = plot_grid(state, region, rel_widths=c(1, 4))
+b = plot_grid(a, get_plot_component(forLegend, 'guide-box-bottom', return_all=T), ncol=1, rel_heights=c(10, 1))
+c = plot_grid(plotPic, pointPic, nrow=1)
+
+
+plot_grid(b, c, ncol=1, rel_heights=c(1,1))
+
+```
+
+**FIG 1**. This is the start of a figure in the manuscript. Admittedly, the map needs a bit of work, but you get the gist.
+
+### Spatial and temporal filtering of nest data
+
+```{r, echo=F, warning=F, message=F}
+demo2011 = st_read('GISData/2011 Demographic Plots.shp', quiet=T)
+demo2012 = st_read('GISData/2012_Demographic_Plots_shape.shp', quiet=T)
+
+tmp11 = demo2011 %>% 
+  select(-Area, -Id) %>% 
+  rename('plot'='IDENT', 'hectares'='Hectares') %>% 
+  mutate(plot = recode(plot, "McCormick's" = "McCormick's Creek State Park",
+                       "Owen-Putnam" = "Owen-Putnam State Forest",
+                       "Spring Mill" = "Spring Mill State Park",
+                       "Martin SF" = "Martin State Forest")) %>% 
+  mutate(region = "CRANE") %>% 
+  mutate(region = ifelse(plot %in% c("Area 7", "Area 27", "Area 41", "Area 58"), "BONWR", region)) %>% 
+  mutate(region = ifelse(plot %in% c("McCormick's Creek State Park", "Owen-Putnam State Forest", "Spring Mill State Park", "Martin State Forest"), "IDNR", region))
+
+tmp12 = demo2012 %>% 
+  rename('plot' = 'IDENT', 'hectares' = 'Area', 'region' = 'Region') %>% 
+  mutate(plot = recode(plot, 'MCCR'="McCormick's Creek State Park",
+                       "OWEN"="Owen-Putnam State Forest",
+                       "SPMI" = "Spring Mill State Park",
+                       "MART" = "Martin State Forest",
+                       "AR27" = "Area 27",
+                       "AR58" = "Area 58",
+                       "AR41" = "Area 41",
+                       "AR07" = "Area 7",
+                       "SULP" = "Sulphur Creek",
+                       "SEED" = "Seed Tick",
+                       "EABO" = "East Bogs",
+                       "FIRS" = "First Creek"))
+
+tmp = rbind(tmp11 %>% mutate(year = 2011),
+            tmp12 %>% mutate(year = 2012),
+            tmp12 %>% mutate(year = 2013),
+            tmp12 %>% mutate(year = 2014)) %>% 
+  mutate(hectares = round(hectares, 2))
+
+st_write(tmp, "C:/Github/pcNestsDataCode/plots.shp")
+  
+
+nests.og = read.csv('wothNestingData.csv')
+nestsSpatial = st_as_sf(nests.og, coords=c('GPS.E', 'GPS.N'), crs=26916)
+
+ogNumNests = nrow(nestsSpatial)
+
+nests2011 = nestsSpatial %>% 
+  filter(year==2011) %>% 
+  st_intersection(demo2011) %>%
+  select(2:11)
+# write_sf(nests2011, 'nests2011.shp')
+
+nestsOther = nestsSpatial %>% 
+  filter(year!=2011) %>% 
+  st_intersection(demo2012) %>%
+  select(2:11)
+
+nestsSpatial = rbind(nests2011, nestsOther)
+
+nestsUsed = nrow(nestsSpatial)
+```
+
+-   We recorded a total of `r ogNumNests` nests, and `r ogNumNests - nestsUsed` (`r 100*(round((ogNumNests-nestsUsed)/ogNumNests, 2))`%) were actually off the plots, so they were eliminated.
+
+```{r, echo=F, warning=F, message=F}
+allSurveys.og = read.csv("surveys.csv")  # information on conditions of the point counts
+locations.og = read.csv("locations.csv") %>% 
+  mutate(plot = ifelse(plot=="McCormick's Creek", "McCormicks Creek", plot))# information on point count locations 
+
+pcSampleDates = locations.og %>% 
+  filter(demo==1) %>% 
+  left_join(allSurveys.og, by='point') %>% 
+  group_by(year, plot) %>% 
+  summarise(startDate = min(date),
+         endDate = max(date))
+
+# plot_names <- c('Area 27', 'Area 41','Area 58', 'Area 7','East Bogs','First Creek','Seed Tick','Sulphur Creek','Martin State Forest','McCormicks Creek','Owen-Putnam State Forest','Spring Mill State Park')
+
+nestsSpaceTime = nestsSpatial %>% 
+  select(year, plot, updated.ID, clutch.completion, eggs, BHCO.eggs, fledgefail, fate, fledged) %>% st_drop_geometry() %>% 
+  cbind(st_coordinates(nestsSpatial)) %>% 
+  mutate(clutchCompletion = yday(as.Date(clutch.completion, format='%Y-%m-%d'))) %>% 
+  mutate(clutchInitiation = clutchCompletion - (eggs + BHCO.eggs)) %>% 
+  mutate(fledgefail = yday(as.Date(fledgefail, format='%Y-%m-%d'))) %>% 
+  mutate(plot = ifelse(plot=='AR07', 'Area 7', plot)) %>% 
+  mutate(plot = ifelse(plot=='AR41', 'Area 41', plot)) %>% 
+  mutate(plot = ifelse(plot=='AR58', 'Area 58', plot)) %>% 
+  mutate(plot = ifelse(plot=='AR27', 'Area 27', plot)) %>% 
+  mutate(plot = ifelse(plot=='EABO', 'East Bogs', plot)) %>% 
+  mutate(plot = ifelse(plot=='FIRS', 'First Creek', plot)) %>% 
+  mutate(plot = ifelse(plot=='MART', 'Martin State Forest', plot)) %>% 
+  mutate(plot = ifelse(plot=='MCCR', 'McCormicks Creek', plot)) %>% 
+  mutate(plot = ifelse(plot=='OWEN' | plot=='owen', 'Owen-Putnam State Forest', plot)) %>% 
+  mutate(plot = ifelse(plot=='SEED', 'Seed Tick', plot)) %>% 
+  mutate(plot = ifelse(plot == 'SULP' | plot == 'SULP\n', 'Sulphur Creek', plot)) %>% 
+  mutate(plot = ifelse(plot=='SPMI', 'Spring Mill State Park', plot)) %>% 
+  left_join(pcSampleDates, by=c('year', 'plot')) %>% 
+  mutate(startDate = yday(as.Date(startDate, format='%Y-%m-%d')),
+         endDate = yday(as.Date(endDate, format='%Y-%m-%d'))) %>%
+  filter(clutchInitiation <= endDate & fledgefail >= startDate)
+
+
+tmp1 = demo2011 %>% 
+  select(IDENT, Hectares) %>% 
+  mutate(plot = IDENT) %>% 
+  select(-IDENT) %>% 
+  mutate(year=2011) %>% 
+  st_drop_geometry()
+
+tmp2 = demo2012 %>% 
+  select(IDENT, Area) %>% 
+  mutate(plot = IDENT) %>% 
+  select(-IDENT)
+
+tmp3 = tmp2 %>% 
+  mutate(year = 2012) %>% 
+  rbind(tmp2 %>% mutate(year=2013)) %>% 
+  rbind(tmp2 %>% mutate(year=2014)) %>% 
+  st_drop_geometry()
+
+colnames(tmp1) = c('area', 'plot', 'year')
+colnames(tmp3) = c('area', 'plot', 'year')
+
+plotAreas = rbind(tmp1, tmp3) %>% 
+  mutate(plot = ifelse(plot=='AR07', 'Area 7', plot)) %>% 
+    mutate(plot = ifelse(plot=='AR27', 'Area 27', plot)) %>% 
+  mutate(plot = ifelse(plot=='AR41', 'Area 41', plot)) %>% 
+  mutate(plot = ifelse(plot=='AR58', 'Area 58', plot)) %>% 
+  mutate(plot = ifelse(plot=='EABO', 'East Bogs', plot)) %>% 
+  mutate(plot = ifelse(plot=='FIRS', 'First Creek', plot)) %>% 
+    mutate(plot = ifelse(plot %in% c('MART', 'Martin SF'), 'Martin State Forest', plot)) %>% 
+    mutate(plot = ifelse(plot %in% c("McCormick's", "MCCR"), 'McCormicks Creek', plot)) %>% 
+    mutate(plot = ifelse(plot %in% c("OWEN", "Owen-Putnam"), 'Owen-Putnam State Forest', plot)) %>%     mutate(plot = ifelse(plot %in% c("SEED"), 'Seed Tick', plot)) %>% 
+      mutate(plot = ifelse(plot %in% c("SPMI", "Spring Mill"), 'Spring Mill State Park', plot)) %>%     mutate(plot = ifelse(plot %in% c("SULP", "Sulpher Creek"), 'Sulphur Creek', plot))
+
+nestsUsed2 = nrow(nestsSpaceTime)
+
+totNests = nestsSpaceTime %>% 
+  group_by(plot, year) %>% 
+  summarise(totNests = n(),
+            fledged = sum(fledged, na.rm=T)) %>% 
+  full_join(plotAreas, by=c('plot', 'year')) %>% 
+  mutate(nestDensity = totNests/area) %>% 
+  mutate(fledgedPerNest = fledged/totNests)
+```
+
+-   For comparison with the point count data, we also filtered out nests that were not active during the actual point count sampling window, defined by the first and last dates on which point counts were conducted on the plot.
+-   This actually eliminated quite a few nests. We dropped `r nestsUsed - nestsUsed2` (`r 100*(round((nestsUsed-nestsUsed2)/nestsUsed, 2))`%) more nests leaving us with `r nestsUsed2` nests for the analysis.
+
+```{r, echo=F, warning=F, message=F, fig.cap="FIG 2. Temporal sampling window of the point counts on each plot compared to the window of time that Wood Thrush nests were known to be active."}
+breedingStartEnd = nestsSpatial %>% 
+  select(year, plot, updated.ID, clutch.completion, eggs, BHCO.eggs, fledgefail, fate, fledged) %>% st_drop_geometry() %>% 
+  cbind(st_coordinates(nestsSpatial)) %>% 
+  mutate(clutchCompletion = yday(as.Date(clutch.completion, format='%Y-%m-%d'))) %>% 
+  mutate(clutchInitiation = clutchCompletion - (eggs + BHCO.eggs)) %>% 
+  mutate(fledgefail = yday(as.Date(fledgefail, format='%Y-%m-%d'))) %>% 
+  mutate(plot = ifelse(plot=='AR07', 'Area 7', plot)) %>% 
+  mutate(plot = ifelse(plot=='AR41', 'Area 41', plot)) %>% 
+  mutate(plot = ifelse(plot=='AR58', 'Area 58', plot)) %>% 
+  mutate(plot = ifelse(plot=='AR27', 'Area 27', plot)) %>% 
+  mutate(plot = ifelse(plot=='EABO', 'East Bogs', plot)) %>% 
+  mutate(plot = ifelse(plot=='FIRS', 'First Creek', plot)) %>% 
+  mutate(plot = ifelse(plot=='MART', 'Martin State Forest', plot)) %>% 
+  mutate(plot = ifelse(plot=='MCCR', 'McCormicks Creek', plot)) %>% 
+  mutate(plot = ifelse(plot=='OWEN' | plot=='owen', 'Owen-Putnam State Forest', plot)) %>% 
+  mutate(plot = ifelse(plot=='SEED', 'Seed Tick', plot)) %>% 
+  mutate(plot = ifelse(plot == 'SULP' | plot == 'SULP\n', 'Sulphur Creek', plot)) %>% 
+  mutate(plot = ifelse(plot=='SPMI', 'Spring Mill State Park', plot)) %>% 
+  group_by(year, plot) %>% 
+  summarise(breedStart = min(clutchInitiation, na.rm=T),
+            breedEnd = max(fledgefail, na.rm=T)) %>% 
+  ungroup() %>% 
+  filter(year!=2015) %>% 
+  mutate(breedStart = as.Date(parse_date_time(paste(year, breedStart), orders='yj')),
+         breedEnd = as.Date(parse_date_time(paste(year, breedEnd), orders='yj')))
+
+
+
+tmp = pcSampleDates %>% 
+  mutate(startDate = as.Date(startDate),
+         endDate = as.Date(endDate)) %>% 
+  mutate(type = 'Point count sample window') %>% 
+  rbind(breedingStartEnd%>% 
+              rename(startDate = breedStart, endDate = breedEnd) %>% 
+          mutate(type = 'Nests active on plot'))
+
+
+ggplot(tmp, aes(x=startDate, y=plot, color=type, alpha=type))+
+  geom_errorbarh(aes(xmin=startDate, xmax=endDate))+
+  scale_color_manual(values=c('red', 'black'), name='')+
+  scale_alpha_manual(values=c(0.5,1))+
+  facet_wrap(~as.factor(year), scales='free')+
+  theme_bw()+
+  theme(panel.grid=element_blank())+
+  theme(axis.text.x = element_text(angle=90))+
+  theme(axis.title.x=element_blank())+
+  theme(legend.position='top')+
+  guides(alpha='none')
+```
+
+**FIG 2**. Temporal sampling window of the point counts on each plot compared to the window of time that Wood Thrush nests were known to be active.
+
+### Analysis of point count data
+
+-   We are starting with 100 m radius point counts
+-   We used the classic hierarchical distance sampling model of Royle et al. 2004, but we're fitting these models using the Bayesian-based spAbundance package so we can include random effects.
+    -   Our detection function is based on distance estimation and we make no assumptions about sites being closed to changes in abundance throughout the breeding season.
+    -   Each point count is treated as a sample of the Wood Thrush density on the plot in the year it was sampled, and we are modeling correlation among repeated samples conducted at the same point count stations using a random station effect.
+-   In the results you are going to see, we modeled:
+    -   detection \~ timeOfDay + timeOfDay\^2 + julianDay + (1\|observer)
+    -   density \~ plot + year + plot\*year + (1\|pcStation)
+    -   With the above notation, note that observer and point count station effects are modeled as random effects.
+
+```{r, echo=F, warning=F, message=F}
+
+allBirds.og = read.csv("birds.csv")  # information on all the birds that were seen in the point counts
+allSurveys.og = read.csv("surveys.csv")  # information on conditions of the point counts
+locations.og = read.csv("locations.csv")  # information on point count locations }
+
+#Deleting birds detected outside of 100 m
+woth = allBirds.og %>% 
+  filter(species=='WOTH') %>% 
+  mutate(distance = distance1) %>% 
+  mutate(distance = ifelse(is.na(distance), distance2, distance)) %>% 
+  mutate(distance = ifelse(is.na(distance), distance3, distance)) %>%   # getting the distance as a singular variable from the initial 3 sub-sections
+  filter(!is.na(distance)) %>% 
+  filter(distance <= 100) %>%  # within the 100 m radius
+  mutate(distanceCat = cut(distance, breaks=c(0, 20, 40, 60, 80, 100))) %>%   # breaking into categories 
+  mutate(song = ifelse(s1==1 | s2==1 | s3==1, 1, 0))
+
+propSingingMales = sum(woth$song)/nrow(woth)
+
+woth = woth %>% 
+  select(point, date, year, time, distance, distanceCat) %>% 
+  group_by(point, date, year, time, distanceCat) %>% 
+  summarise(count = n()) %>% 
+  ungroup()
+
+
+#Detection data
+y = allSurveys.og %>% 
+  select(point, date, year, time) %>% 
+  crossing(woth %>% select(distanceCat), by=NULL) %>%   # what exactly is happening here?
+  full_join(woth, by=c('point', 'date', 'year', 'time', 'distanceCat')) %>% 
+  mutate(count = ifelse(is.na(count), 0, count)) %>% 
+  pivot_wider(names_from = distanceCat, values_from = count)
+
+# can now see how many birds were seen within each distance category at each point count time/location
+
+
+
+# adding in data from locations
+siteVars = allSurveys.og %>% 
+  select(-X) %>% 
+  left_join(locations.og %>% select(point, property, plot, regular, demo), by='point')
+
+siteVars = siteVars %>% 
+  filter(!is.na(property))
+
+y = y %>% 
+  filter(point %in% siteVars$point)
+
+yAnalysis = as.matrix(y %>% 
+  arrange(year, point, date, time) %>% 
+  select(-year, -point, -date, -time))
+
+siteVarsAnalysis = siteVars %>% 
+  arrange(year, point, date, time) %>% 
+  mutate(year = as.factor(year)) %>% 
+  mutate(scaleJulian = scale(julian, center=T, scale=T)) %>% 
+  mutate(scaleTime = scale(time, center=T, scale=T)) %>% 
+  select(-regular) %>% 
+  mutate(numObserver = as.integer(as.factor(observer))) %>% 
+  mutate(numPoint = as.integer(as.factor(as.character(point))))
+
+analysisData = unmarkedFrameDS(yAnalysis, siteVarsAnalysis, dist.breaks = c(0, 20, 40, 60, 80, 100),
+                               survey='point', unitsIn='m')
+
+# modelJulian = distsamp(~scaleJulian~1, data=analysisData, keyfun='halfnorm', output='density', unitsOut='ha')
+# 
+# save(modelJulian, file='modelJulian.RData')
+
+
+#These 2 models yield the same output
+analysisData2 = list('y'=yAnalysis, 'covs'=siteVarsAnalysis, 'dist.breaks'=c(0, 20, 40, 60, 80, 100), 'offset'=pi)
+
+# modelJulian2 = DS(abund.formula= ~1, det.formula= ~scaleJulian, data=analysisData2, n.batch=800, batch.length=25, accept.rate=0.43, family='Poisson', transect='point', det.func='halfnormal', n.burn=10000, n.thin=5, n.chains=3)
+# 
+# save(modelJulian2, file='modelJulian2.RData')
+# 
+# 
+# modelJulian3 = DS(abund.formula= ~1, det.formula= ~scaleJulian, data=analysisData2, n.batch=1600, batch.length=25, accept.rate=0.43, family='Poisson', transect='point', det.func='halfnormal', n.burn=20000, n.thin=10, n.chains=3, inits=list(beta=coef(modelJulian)[1], alpha=coef(modelJulian)[2:3]))
+# 
+# save(modelJulian3, file='modelJulian3.RData')
+# 
+# 
+# modelJulian4 = DS(abund.formula= ~1, det.formula= ~scaleJulian, data=analysisData2, n.batch=3200, batch.length=25, accept.rate=0.43, family='Poisson', transect='point', det.func='halfnormal', n.burn=40000, n.thin=20, n.chains=3, inits=list(beta=coef(modelJulian)[1], alpha=coef(modelJulian)[2:3]))
+# 
+# save(modelJulian4, file='modelJulian4.RData')
+# 
+# 
+# modelJulian5 = DS(abund.formula= ~1, det.formula= ~scaleJulian + (1|numObserver), data=analysisData2, n.batch=3200, batch.length=25, accept.rate=0.43, family='Poisson', transect='point', det.func='halfnormal', n.burn=40000, n.thin=20, n.chains=3)
+# 
+# save(modelJulian5, file='modelJulian5.RData')
+# 
+# 
+# 
+# finalModel = distsamp(~observer + scaleJulian + scaleTime + I(scaleTime^2) ~ plot + year + year*plot, data=analysisData, keyfun='halfnorm', output='density', unitsOut='ha')
+# 
+# save(finalModel, file='finalModel.RData')
+
+load('finalModel.RData')
+
+# 
+# 
+# 
+# finalModel2 = DS(abund.formula= ~ plot + year + year*plot + (1|numPoint),
+#                  det.formula= ~ scaleJulian + scaleTime + I(scaleTime^2) + (1|numObserver), data=analysisData2,
+#                  n.batch=3200, batch.length=25, accept.rate=0.43, family='Poisson', transect='point', det.func='halfnormal', n.burn=40000, n.thin=20, n.chains=3, inits=list(beta=coef(finalModel)[1:48], alpha=c(4, coef(finalModel)[69:71])))
+# 
+# save(finalModel2, file='finalModel2.RData')
+# 
+# 
+# finalModel3 = DS(abund.formula= ~ plot + year + year*plot + (1|numPoint),
+#                  det.formula= ~ scaleJulian + scaleTime + I(scaleTime^2) + (1|numObserver), data=analysisData2,
+#                  n.batch=6400, batch.length=25, accept.rate=0.43, family='Poisson', transect='point', det.func='halfnormal', n.burn=80000, n.thin=40, n.chains=3, inits=list(beta=coef(finalModel)[1:48], alpha=c(4, coef(finalModel)[69:71])))
+# 
+# save(finalModel3, file='finalModel3.RData')
+
+load('finalModel3.RData')
+
+summary(finalModel3)
+
+
+
+```
+
+```{r}
+#| eval: false
+#| include: false
+
+#This chunk was used to make sure the Bayesian model is giving me the same answers as those we are getting from the Unmarked model, and it is.
+
+# lcl = function(x){quantile(x, probs=0.025)}
+# ucl = function(x){quantile(x, probs=0.975)}
+# 
+# tmp = data.frame(cbind(finalModel3$alpha.samples, finalModel3$beta.samples)) %>% 
+#   summarise_all(list(est=mean, lcl=lcl, ucl=ucl)) %>% 
+#   pivot_longer(cols=everything()) %>% 
+#   separate(name, c('parameter', 'estimate'), sep="_") %>% 
+#   pivot_wider(names_from='estimate', values_from='value') %>% 
+#   mutate(model='bayesian')
+#   
+# 
+# tmp1 = data.frame('est' = coef(finalModel),
+#                   'se' = SE(finalModel)) %>%
+#   mutate(lcl = est - 1.96*se,
+#          ucl = est + 1.96*se) %>% 
+#   select(-se) %>% 
+#   mutate(parameter = row.names(.)) %>% 
+#   filter(str_detect(parameter, 'observer') == F)
+# 
+# tmp1 = rbind(tmp1[49:52,], tmp1[1:48,]) %>% 
+#   mutate(parameter = tmp$parameter) %>% 
+#   mutate(model = 'frequentist') %>% 
+#   rbind(tmp) %>% 
+#   mutate(parameter = factor(parameter, levels=tmp$parameter))
+# 
+# 
+# ggplot(tmp1, aes(x=parameter, y=est, color=model))+
+#   theme_bw()+
+#   theme(panel.grid=element_blank())+
+#   geom_point(position=position_dodge(width=0.5))+
+#   geom_errorbar(aes(ymin=lcl, ymax=ucl), position=position_dodge(width=0.5))+
+#   theme(axis.text.x=element_text(angle=90))
+  
+  
+```
+
+-   We checked model fit by:
+    -   Tracking the posterior distribution of the model chi-square statistic by comparing the observed values with the expected values predicted by the model at each iteration.
+    -   Simulating 6000 datasets from the fitted model and calculating chi-square statistics from each of those.
+    -   Comparing the original model chi-square statistic to the distribution of the 6000 statistics from the simulated dataset.
+
+```{r, echo=F, warning=F, message=F}
+# ppcOut = ppcAbund(finalModel3, fit.stat='chi-squared', group=0)
+# save(ppcOut, file='finalModel3Fit.RData')
+load('finalModel3Fit.RData')
+
+summary(ppcOut)
+```
+
+Note the Bayesian p-value. We want this to be within the 95% credible interval, and it is, so that means that our model is a good fit for the data we collected.
+
+### Point counts as an indicator of plot-level breeding activity
+
+-   From the demographic data, the nest density values used for the following analyses are meanDailyNestDensity - this is the average number of nests that were active on days encompassed by the point count sampling period.
+    -   We debated about what value to use for nests
+    -   We were concerned that if we summed all nests that were active at some point during the point count sampling period, we could run into a problem with one individual being associated with multiple nests due to re-nesting attempts.
+-   We extracted the posterior distribution (6,000 estimates) of year-by-plot estimates of density from the fitted point count model
+    -   This left us with 6,000 estimates of density at each of the 48 units (4 years x 12 plots)
+-   For each of those 6,000 estimates, I fit 2 linear mixed models
+    -   Both included random year and plot effects
+    -   One was PCdensity \~ meanDailyNestDensity
+    -   Two was PCdensity \~ meanDailyNestDensity + meanDailyNestDensity\^2
+-   The model that included the quadratic meanDailyNestDensity works better based on AIC, so I am reporting those results
+
+```{r, echo=F, warning=F, message=F}
+
+dailyNests = data.frame('plot'=character(), 'year'=integer(), 'day'=integer())
+
+for(i in 1:nrow(nestsSpaceTime)){
+  tmp = data.frame(matrix(NA, nrow=length(nestsSpaceTime$clutchInitiation[i]:nestsSpaceTime$fledgefail[i]), ncol=ncol(nestsSpaceTime)))
+  colnames(tmp) = colnames(nestsSpaceTime)
+  tmp[1:nrow(tmp),] = nestsSpaceTime[i,]
+  tmp = tmp %>% 
+    mutate(day = nestsSpaceTime$clutchInitiation[i]:nestsSpaceTime$fledgefail[i]) %>% 
+    select(year, plot, day)
+  dailyNests = rbind(dailyNests, tmp)
+}
+
+dailyNests = dailyNests %>% 
+  group_by(year, plot, day) %>% 
+  summarise(nests = n()) %>% 
+  ungroup() %>% 
+  left_join(pcSampleDates, by=c('plot', 'year')) %>% 
+  mutate(startDate = yday(startDate),
+         endDate = yday(endDate)) %>% 
+  filter(day >= startDate & day <= endDate) %>% 
+  group_by(plot, year) %>% 
+  summarise(meanNests = mean(nests)) %>% 
+  ungroup() %>% 
+  full_join(totNests, by=c('plot', 'year')) %>% 
+  mutate(meanNestDensity = meanNests/area)
+```
+
+```{r, echo=F, warning=F, message=F, fig.cap="FIG 3. The relationship between year-by-plot level densities estimated from the fitted point count model and the true density of active nests on plots. The solid black line is the fitted regression line with bootstrapped confidence intervals. The dashed black line is a 1:1 line indicating identical density estimates from the point counts and nests."}
+
+predDf = expand.grid(plot = unique(siteVarsAnalysis$plot),
+                            year = unique(siteVarsAnalysis$year)) %>% 
+  mutate(plot = as.character(plot))
+
+mm = model.matrix(~plot + year + year*plot, data=predDf)
+
+predMCMC = predict(finalModel3, mm, ignore.RE=T)
+
+# predicted = data.frame(predMCMC$mu.0.samples)
+
+tmp = t(predMCMC$mu.0.samples)
+
+
+predicted = data.frame(t(predMCMC$mu.0.samples)) %>% 
+  mutate(plot = predDf$plot, year = predDf$year) %>% 
+  pivot_longer(cols=c(-plot, -year), names_to='iteration') %>% 
+  mutate(iteration = str_replace(iteration, 'X', '')) %>% 
+  mutate(iteration = as.numeric(as.character(iteration))) %>% 
+  mutate(year = as.integer(as.character(year))) %>% 
+  mutate(plot = as.character(plot)) %>% 
+  mutate(plot = ifelse(plot=="McCormick's Creek", "McCormicks Creek", plot))
+
+
+intercept = rep(NA, max(predicted$iteration))
+slope = rep(NA, max(predicted$iteration))
+
+interceptQuad = rep(NA, max(predicted$iteration))
+slopeQuad = rep(NA, max(predicted$iteration))
+slope2Quad = rep(NA, max(predicted$iteration))
+
+aicLin = rep(NA, max(predicted$iteration))
+aicQuad = rep(NA, max(predicted$iteration))
+
+
+# for(i in 1:max(predicted$iteration)){
+#   print(i)
+#   tmp = predicted %>%
+#     filter(iteration==i) %>%
+#     left_join(dailyNests, by=c('plot', 'year'))
+# 
+#   model = lme4::lmer(value ~ meanNestDensity + (1|plot) + (1|year), data=tmp)
+#   intercept[i] = coef(summary(model))[1,1]
+#   slope[i] = coef(summary(model))[2,1]
+#   aicLin[i] = AIC(model)
+# 
+#   model2 = lme4::lmer(value ~ meanNestDensity + I(meanNestDensity^2) + (1|plot) + (1|year), data=tmp)
+# 
+#   interceptQuad[i] = coef(summary(model2))[1,1]
+#   slopeQuad[i] = coef(summary(model2))[2,1]
+#   slope2Quad[i] = coef(summary(model2))[3,1]
+#   aicQuad[i] = AIC(model2)
+# }
+# 
+# 
+# plotRegResults = data.frame(
+#   'intercept'=intercept,
+#   'slope'=slope,
+#   'interceptQuad'=interceptQuad,
+#   'slopeQuad'=slopeQuad,
+#   'slope2Quad'=slope2Quad,
+#   'aicLin'=aicLin,
+#   'aicQuad'=aicQuad
+# )
+# 
+# save(plotRegResults, file='storedResults/plotRegResults.RData')
+
+load('storedResults/plotRegResults.RData')
+intercept=plotRegResults$intercept
+slope=plotRegResults$slope
+interceptQuad=plotRegResults$interceptQuad
+slopeQuad=plotRegResults$slopeQuad
+slope2Quad=plotRegResults$slope2Quad
+
+
+# sum(plotRegResults$aicLin < plotRegResults$aicQuad)
+
+simNests = seq(0, 0.5, 0.01)
+
+ests = rep(NA, length(simNests))
+lcl = rep(NA, length(simNests))
+ucl = rep(NA, length(simNests))
+
+for(i in 1:length(simNests)){
+  tmp = interceptQuad + slopeQuad*simNests[i] + slope2Quad*simNests[i]*simNests[i]
+  ests[i] = mean(tmp)
+  lcl[i] = quantile(tmp, probs=0.025)
+  ucl[i] = quantile(tmp, probs=0.975)
+}
+
+regPreds = data.frame(
+  'nests' = simNests,
+  'predPC' = ests,
+  'lclPC' = lcl,
+  'uclPC' = ucl
+)
+
+plotComparison = predicted %>% 
+  group_by(plot, year) %>% 
+  summarise(estimate = mean(value),
+         lcl = quantile(value, probs=0.025),
+         ucl = quantile(value, probs=0.975)) %>% 
+  ungroup() %>% 
+  full_join(dailyNests, by=c('plot', 'year')) %>% 
+  mutate(year = as.factor(year))
+
+
+ggplot()+
+  geom_abline(intercept=0, slope=1, col='black', linetype='dashed')+
+  geom_ribbon(data=regPreds, aes(x=nests, ymin=lcl, ymax=ucl), alpha=0.2)+
+  geom_line(data=regPreds, aes(x=nests, y=predPC), color='black')+
+  geom_point(data=plotComparison, aes(x=meanNestDensity, y=estimate, color=plot, pch=year))+
+  theme_bw()+
+  theme(panel.grid=element_blank())+
+  geom_errorbar(data=plotComparison, aes(x=meanNestDensity, y=estimate, color=plot, ymin=lcl, ymax=ucl))+
+  xlab('Density of active nests on plot during point count period')+
+  ylab('Density of Wood Thrush estimated by point count surveys')+
+  theme(legend.position='bottom',
+        legend.box='vertical')
+```
+
+-   It seems like there is a strong positive relationship between density estimates and nests up to about 0.3 nests per hectare at which point it levels off such that more nests does not equate to an increase in estimated density.
+-   Point count estimates of density also seem to be overestimates of nest density.
+    -   Note that we included every Wood Thrush recorded during a point count in our analysis, `r 100*round(propSingingMales, 2)`% of which were singing males.
+
+### Point counts as an indicator of point-level breeding activity
+
+-   We extracted the posterior distribution (6,000 estimates) of the latent density of Wood Thrush at each point during each survey
+    -   This left us with 6,000 estimates of the WOTH density at the specific point during each of the 2,422 surveys conducted.
+-   Next, we quantified the number of WOTH nests that were active within 100 m of the sample point at the moment the point count survey was conducted (Figure 1).
+-   For each of the 6,000 estimates described above, I fit 2 generalized linear mixed models
+    -   Both assumed a Poisson distribution and included point and year random effects
+    -   One was PCdensity \~ nestDensity
+    -   Two was PCdensity \~ nestDensity + nestDensity\^2
+-   The linear nestDensity model works better here based on AIC, so I am reporting those results
+
+```{r, echo=F, warning=F, message=F, fig.cap="FIG 4. The relationship between survey-specific estimates of density from the fitted point count model and the true density of active nests within 100 m of the point count station at the time the survey was conducted. The solid black line is the fitted regression line with bootstrapped confidence intervals. The dashed black line is a 1:1 line indicating identical density estimates from the point counts and nests."}
+
+pcOverlap = read.csv('PC overlap with Demo plots.csv') %>%
+  select(-X)
+
+pointLocs = analysisData2$covs %>% 
+  select(point, date, year, plot, julian) %>% 
+  left_join(locations.og %>% select(point, utmX, utmY), by='point') %>% 
+  st_as_sf(coords=c('utmX', 'utmY'), crs=crs(plotLocs)) %>%
+  mutate(year = as.numeric(as.character(year))) %>%
+  left_join(pcOverlap, by='point') %>%
+  mutate(nests = NA) 
+  
+pointLocsBuff = st_buffer(pointLocs, 100) %>%
+  mutate(date = pointLocs$date,
+         julian = pointLocs$julian)
+
+nestLocs = nestsSpaceTime %>%
+  st_as_sf(coords=c('X', 'Y'), crs=crs(pointLocsBuff)) %>%
+  mutate(year = as.numeric(year)) %>% 
+  rename(nestYear = year)
+
+for(i in 1:nrow(pointLocs)){
+  pc = pointLocsBuff[i,]
+  nests = st_intersection(pc, nestLocs) %>%
+    filter(year==nestYear & clutchInitiation <= julian & fledgefail >= julian)
+  pointLocs$nests[i] = nrow(nests)
+}
+
+
+# intercept = rep(NA, max(predicted$iteration))
+# slope = rep(NA, max(predicted$iteration))
+# 
+# interceptQuad = rep(NA, max(predicted$iteration))
+# slopeQuad = rep(NA, max(predicted$iteration))
+# slope2Quad = rep(NA, max(predicted$iteration))
+# 
+# aicLin = rep(NA, max(predicted$iteration))
+# aicQuad = rep(NA, max(predicted$iteration))
+# 
+# 
+# tmp = analysisData2$covs
+# 
+# all(tmp$date==pointLocs$date)
+# 
+# 
+# 
+# for(i in 1:max(predicted$iteration)){
+#   print(i)
+#   tmp = pointLocs %>%
+#     mutate(ests = finalModel3$N.samples[i,],
+#            point = as.factor(as.character(point))) %>%
+#   filter(!(year==2011 & percOverlap2011 < 0.8)) %>%
+#   filter(!(year > 2011 & percOverlap2012 < 0.8)) %>%
+#     mutate(year = as.factor(as.character(year)))
+# 
+#   model = lme4::glmer(ests ~ nests + (1|point) + (1|year), family=poisson, data=tmp)
+#   intercept[i] = coef(summary(model))[1,1]
+#   slope[i] = coef(summary(model))[2,1]
+# 
+#   model2 = lme4::glmer(ests ~ nests + I(nests^2) + (1|point) + (1|year), family=poisson, data=tmp)
+#   interceptQuad[i] = coef(summary(model2))[1,1]
+#   slopeQuad[i] = coef(summary(model2))[2,1]
+#   slope2Quad[i] = coef(summary(model2))[3,1]
+# 
+#   aicLin[i] = AIC(model)
+#   aicQuad[i] = AIC(model2)
+# }
+# 
+# 
+# pointRegResults = data.frame(
+#   'intercept'=intercept,
+#   'slope'=slope,
+#   'interceptQuad'=interceptQuad,
+#   'slopeQuad'=slopeQuad,
+#   'slope2Quad'=slope2Quad,
+#   'aicLin'=aicLin,
+#   'aicQuad'=aicQuad
+# )
+# 
+# save(pointRegResults, file='storedResults/pointRegResults.RData')
+
+
+
+load('storedResults/pointRegResults.RData')
+intercept=pointRegResults$intercept
+slope=pointRegResults$slope
+
+# sum(pointRegResults$aicLin < pointRegResults$aicQuad)
+
+simNests = seq(0, 8, 0.25)
+
+ests = rep(NA, length(simNests))
+lcl = rep(NA, length(simNests))
+ucl = rep(NA, length(simNests))
+
+for(i in 1:length(simNests)){
+  tmp = intercept + slope*simNests[i]
+  ests[i] = exp(mean(tmp))
+  lcl[i] = exp(quantile(tmp, probs=0.025))
+  ucl[i] = exp(quantile(tmp, probs=0.975))
+}
+
+
+regPreds = data.frame(
+  'nests' = simNests,
+  'predPC' = ests,
+  'lclPC' = lcl,
+  'uclPC' = ucl
+) %>% 
+  mutate(nestDens = simNests/((pi*100^2)/10000),
+         predPC = predPC/((pi*100^2)/10000),
+         lclPC = lclPC/((pi*100^2)/10000),
+         uclPC = uclPC/((pi*100^2)/10000))
+
+
+pointComparison =  data.frame(pointLocs) %>% 
+  mutate(estimate = colMeans(finalModel3$N.samples, na.rm=T),
+         lcl = apply(finalModel3$N.samples, 2, quantile, probs=0.025, na.rm=T),
+         ucl = apply(finalModel3$N.samples, 2, quantile, probs=0.975, na.rm=T)) %>% 
+  filter(!(year==2011 & percOverlap2011 < 0.8)) %>%
+  filter(!(year > 2011 & percOverlap2012 < 0.8)) %>% 
+  mutate(nestDens = nests/((pi*100^2)/10000),
+         estimate = estimate/((pi*100^2)/10000),
+         lcl = lcl/((pi*100^2)/10000),
+         ucl = ucl/((pi*100^2)/10000))
+
+ggplot()+
+  geom_abline(intercept=0, slope=1, col='black', linetype='dashed')+
+  geom_ribbon(data=regPreds, aes(x=nestDens, ymin=lclPC, ymax=uclPC), alpha=0.2)+
+  geom_line(data=regPreds, aes(x=nestDens, y=predPC), color='black')+
+  geom_point(data=pointComparison, aes(x=nestDens, y=estimate), alpha=0.2)+
+  theme_bw()+
+  theme(panel.grid=element_blank())+
+  # geom_errorbar(data=pointComparison, aes(x=nests, y=estimate, ymin=lcl, ymax=ucl))+
+  xlab('Density of active nests within 100 m of point during survey')+
+  ylab('Survey-specific PC estimate of WOTH density within 100 m of point')+
+  theme(legend.position='bottom',
+        legend.box='vertical')
+```
+
+-   It looks like we're seeing a weak, positive relationship at the point-level. The model estimates indicate that for each additional nest within 100 m of a point count station, the point-level density estimate from the point counts increase by a factor of `r round(exp(mean(slope)), 2)`, (95% CI = `r round(exp(quantile(slope, probs=c(0.025, 0.975))), 2)`).
+-   In other words, there is a `r 100*(round(exp(mean(slope)), 2)-1)`% increase in the point-level density estimate for each nest added.
+
+### PREVIOUS point counts as an indicator of point-level breeding activity
+
+-   As Matt pointed out, birds are often most vocal BEFORE the nesting period. Thus, I re-constructed the previous analysis by comparing the point count density estimate with the local nest density 1-week and 2-weeks later.
+
+```{r, echo=F, warning=F, message=F, fig.cap="FIG 5. The relationship between survey-specific estimates of density from the fitted point count model and the true density of active nests within 100 m of the point count station 1-week after the survey was conducted. The solid black line is the fitted regression line with bootstrapped confidence intervals. The dashed black line is a 1:1 line indicating identical density estimates from the point counts and nests."}
+pointLocs = analysisData2$covs %>% 
+  select(point, date, year, plot, julian) %>% 
+  left_join(locations.og %>% select(point, utmX, utmY), by='point') %>% 
+  st_as_sf(coords=c('utmX', 'utmY'), crs=crs(plotLocs)) %>%
+  mutate(year = as.numeric(as.character(year))) %>%
+  left_join(pcOverlap, by='point') %>%
+  mutate(nests = NA) 
+  
+pointLocsBuff = st_buffer(pointLocs, 100) %>%
+  mutate(date = pointLocs$date,
+         julian = pointLocs$julian)
+
+nestLocs = nestsSpaceTime %>%
+  st_as_sf(coords=c('X', 'Y'), crs=crs(pointLocsBuff)) %>%
+  mutate(year = as.numeric(year)) %>% 
+  rename(nestYear = year) %>% 
+  mutate(clutchInitiation = clutchInitiation - 7,
+         fledgefail = fledgefail - 7)
+
+for(i in 1:nrow(pointLocs)){
+  pc = pointLocsBuff[i,]
+  nests = st_intersection(pc, nestLocs) %>%
+    filter(year==nestYear & clutchInitiation <= julian & fledgefail >= julian)
+  pointLocs$nests[i] = nrow(nests)
+}
+
+
+# intercept = rep(NA, max(predicted$iteration))
+# slope = rep(NA, max(predicted$iteration))
+# 
+# interceptQuad = rep(NA, max(predicted$iteration))
+# slopeQuad = rep(NA, max(predicted$iteration))
+# slope2Quad = rep(NA, max(predicted$iteration))
+# 
+# aicLin = rep(NA, max(predicted$iteration))
+# aicQuad = rep(NA, max(predicted$iteration))
+# 
+# 
+# tmp = analysisData2$covs
+# 
+# all(tmp$date==pointLocs$date)
+# 
+# 
+# 
+# for(i in 1:max(predicted$iteration)){
+#   print(i)
+#   tmp = pointLocs %>%
+#     mutate(ests = finalModel3$N.samples[i,],
+#            point = as.factor(as.character(point))) %>%
+#   filter(!(year==2011 & percOverlap2011 < 0.8)) %>%
+#   filter(!(year > 2011 & percOverlap2012 < 0.8)) %>%
+#     mutate(year = as.factor(as.character(year)))
+# 
+#   model = lme4::glmer(ests ~ nests + (1|point) + (1|year), family=poisson, data=tmp)
+#   intercept[i] = coef(summary(model))[1,1]
+#   slope[i] = coef(summary(model))[2,1]
+# 
+#   model2 = lme4::glmer(ests ~ nests + I(nests^2) + (1|point) + (1|year), family=poisson, data=tmp)
+#   interceptQuad[i] = coef(summary(model2))[1,1]
+#   slopeQuad[i] = coef(summary(model2))[2,1]
+#   slope2Quad[i] = coef(summary(model2))[3,1]
+# 
+#   aicLin[i] = AIC(model)
+#   aicQuad[i] = AIC(model2)
+# }
+# 
+# 
+# pointRegResults = data.frame(
+#   'intercept'=intercept,
+#   'slope'=slope,
+#   'interceptQuad'=interceptQuad,
+#   'slopeQuad'=slopeQuad,
+#   'slope2Quad'=slope2Quad,
+#   'aicLin'=aicLin,
+#   'aicQuad'=aicQuad
+# )
+# 
+# save(pointRegResults, file='storedResults/pointRegResults1Week.RData')
+
+
+
+load('storedResults/pointRegResults1Week.RData')
+intercept=pointRegResults$intercept
+slope=pointRegResults$slope
+
+# sum(pointRegResults$aicLin < pointRegResults$aicQuad)
+
+simNests = seq(0, 8, 0.25)
+
+ests = rep(NA, length(simNests))
+lcl = rep(NA, length(simNests))
+ucl = rep(NA, length(simNests))
+
+for(i in 1:length(simNests)){
+  tmp = intercept + slope*simNests[i]
+  ests[i] = exp(mean(tmp))
+  lcl[i] = exp(quantile(tmp, probs=0.025))
+  ucl[i] = exp(quantile(tmp, probs=0.975))
+}
+
+
+regPreds = data.frame(
+  'nests' = simNests,
+  'predPC' = ests,
+  'lclPC' = lcl,
+  'uclPC' = ucl
+) %>% 
+  mutate(nestDens = simNests/((pi*100^2)/10000),
+         predPC = predPC/((pi*100^2)/10000),
+         lclPC = lclPC/((pi*100^2)/10000),
+         uclPC = uclPC/((pi*100^2)/10000))
+
+
+pointComparison =  data.frame(pointLocs) %>% 
+  mutate(estimate = colMeans(finalModel3$N.samples, na.rm=T),
+         lcl = apply(finalModel3$N.samples, 2, quantile, probs=0.025, na.rm=T),
+         ucl = apply(finalModel3$N.samples, 2, quantile, probs=0.975, na.rm=T)) %>% 
+  filter(!(year==2011 & percOverlap2011 < 0.8)) %>%
+  filter(!(year > 2011 & percOverlap2012 < 0.8)) %>% 
+  mutate(nestDens = nests/((pi*100^2)/10000),
+         estimate = estimate/((pi*100^2)/10000),
+         lcl = lcl/((pi*100^2)/10000),
+         ucl = ucl/((pi*100^2)/10000))
+
+ggplot()+
+  geom_abline(intercept=0, slope=1, col='black', linetype='dashed')+
+  geom_ribbon(data=regPreds, aes(x=nestDens, ymin=lclPC, ymax=uclPC), alpha=0.2)+
+  geom_line(data=regPreds, aes(x=nestDens, y=predPC), color='black')+
+  geom_point(data=pointComparison, aes(x=nestDens, y=estimate), alpha=0.2)+
+  theme_bw()+
+  theme(panel.grid=element_blank())+
+  # geom_errorbar(data=pointComparison, aes(x=nests, y=estimate, ymin=lcl, ymax=ucl))+
+  xlab('Density of active nests within 100 m of point 1-week later')+
+  ylab('Survey-specific PC estimate of WOTH density within 100 m of point')+
+  theme(legend.position='bottom',
+        legend.box='vertical')
+```
+
+-   The estimate is almost the same when we look at nests 1-week later. The model estimates indicate that for each additional nest, the point-level density estimate from the point counts increase by a factor of `r round(exp(mean(slope)), 2)`, (95% CI = `r round(exp(quantile(slope, probs=c(0.025, 0.975))), 2)`).
+
+```{r, echo=F, warning=F, message=F, fig.cap="FIG 6. The relationship between survey-specific estimates of density from the fitted point count model and the true density of active nests within 100 m of the point count station 2 weeks after the survey was conducted. The solid black line is the fitted regression line with bootstrapped confidence intervals. The dashed black line is a 1:1 line indicating identical density estimates from the point counts and nests."}
+pointLocs = analysisData2$covs %>% 
+  select(point, date, year, plot, julian) %>% 
+  left_join(locations.og %>% select(point, utmX, utmY), by='point') %>% 
+  st_as_sf(coords=c('utmX', 'utmY'), crs=crs(plotLocs)) %>%
+  mutate(year = as.numeric(as.character(year))) %>%
+  left_join(pcOverlap, by='point') %>%
+  mutate(nests = NA) 
+  
+pointLocsBuff = st_buffer(pointLocs, 100) %>%
+  mutate(date = pointLocs$date,
+         julian = pointLocs$julian)
+
+nestLocs = nestsSpaceTime %>%
+  st_as_sf(coords=c('X', 'Y'), crs=crs(pointLocsBuff)) %>%
+  mutate(year = as.numeric(year)) %>% 
+  rename(nestYear = year) %>% 
+  mutate(clutchInitiation = clutchInitiation - 14,
+         fledgefail = fledgefail - 14)
+
+for(i in 1:nrow(pointLocs)){
+  pc = pointLocsBuff[i,]
+  nests = st_intersection(pc, nestLocs) %>%
+    filter(year==nestYear & clutchInitiation <= julian & fledgefail >= julian)
+  pointLocs$nests[i] = nrow(nests)
+}
+
+
+# intercept = rep(NA, max(predicted$iteration))
+# slope = rep(NA, max(predicted$iteration))
+# 
+# interceptQuad = rep(NA, max(predicted$iteration))
+# slopeQuad = rep(NA, max(predicted$iteration))
+# slope2Quad = rep(NA, max(predicted$iteration))
+# 
+# aicLin = rep(NA, max(predicted$iteration))
+# aicQuad = rep(NA, max(predicted$iteration))
+# 
+# 
+# tmp = analysisData2$covs
+# 
+# all(tmp$date==pointLocs$date)
+# 
+# 
+# 
+# for(i in 1:max(predicted$iteration)){
+#   print(i)
+#   tmp = pointLocs %>%
+#     mutate(ests = finalModel3$N.samples[i,],
+#            point = as.factor(as.character(point))) %>%
+#   filter(!(year==2011 & percOverlap2011 < 0.8)) %>%
+#   filter(!(year > 2011 & percOverlap2012 < 0.8)) %>%
+#     mutate(year = as.factor(as.character(year)))
+# 
+#   model = lme4::glmer(ests ~ nests + (1|point) + (1|year), family=poisson, data=tmp)
+#   intercept[i] = coef(summary(model))[1,1]
+#   slope[i] = coef(summary(model))[2,1]
+# 
+#   model2 = lme4::glmer(ests ~ nests + I(nests^2) + (1|point) + (1|year), family=poisson, data=tmp)
+#   interceptQuad[i] = coef(summary(model2))[1,1]
+#   slopeQuad[i] = coef(summary(model2))[2,1]
+#   slope2Quad[i] = coef(summary(model2))[3,1]
+# 
+#   aicLin[i] = AIC(model)
+#   aicQuad[i] = AIC(model2)
+# }
+# 
+# 
+# pointRegResults = data.frame(
+#   'intercept'=intercept,
+#   'slope'=slope,
+#   'interceptQuad'=interceptQuad,
+#   'slopeQuad'=slopeQuad,
+#   'slope2Quad'=slope2Quad,
+#   'aicLin'=aicLin,
+#   'aicQuad'=aicQuad
+# )
+# 
+# save(pointRegResults, file='storedResults/pointRegResults2Weeks.RData')
+
+
+
+load('storedResults/pointRegResults2Weeks.RData')
+intercept=pointRegResults$intercept
+slope=pointRegResults$slope
+
+# sum(pointRegResults$aicLin < pointRegResults$aicQuad)
+
+simNests = seq(0, 8, 0.25)
+
+ests = rep(NA, length(simNests))
+lcl = rep(NA, length(simNests))
+ucl = rep(NA, length(simNests))
+
+for(i in 1:length(simNests)){
+  tmp = intercept + slope*simNests[i]
+  ests[i] = exp(mean(tmp))
+  lcl[i] = exp(quantile(tmp, probs=0.025))
+  ucl[i] = exp(quantile(tmp, probs=0.975))
+}
+
+
+regPreds = data.frame(
+  'nests' = simNests,
+  'predPC' = ests,
+  'lclPC' = lcl,
+  'uclPC' = ucl
+) %>% 
+  mutate(nestDens = simNests/((pi*100^2)/10000),
+         predPC = predPC/((pi*100^2)/10000),
+         lclPC = lclPC/((pi*100^2)/10000),
+         uclPC = uclPC/((pi*100^2)/10000))
+
+
+pointComparison =  data.frame(pointLocs) %>% 
+  mutate(estimate = colMeans(finalModel3$N.samples, na.rm=T),
+         lcl = apply(finalModel3$N.samples, 2, quantile, probs=0.025, na.rm=T),
+         ucl = apply(finalModel3$N.samples, 2, quantile, probs=0.975, na.rm=T)) %>% 
+  filter(!(year==2011 & percOverlap2011 < 0.8)) %>%
+  filter(!(year > 2011 & percOverlap2012 < 0.8)) %>% 
+  mutate(nestDens = nests/((pi*100^2)/10000),
+         estimate = estimate/((pi*100^2)/10000),
+         lcl = lcl/((pi*100^2)/10000),
+         ucl = ucl/((pi*100^2)/10000))
+
+ggplot()+
+  geom_abline(intercept=0, slope=1, col='black', linetype='dashed')+
+  geom_ribbon(data=regPreds, aes(x=nestDens, ymin=lclPC, ymax=uclPC), alpha=0.2)+
+  geom_line(data=regPreds, aes(x=nestDens, y=predPC), color='black')+
+  geom_point(data=pointComparison, aes(x=nestDens, y=estimate), alpha=0.2)+
+  theme_bw()+
+  theme(panel.grid=element_blank())+
+  # geom_errorbar(data=pointComparison, aes(x=nests, y=estimate, ymin=lcl, ymax=ucl))+
+  xlab('Density of active nests within 100 m of point 2-weeks later')+
+  ylab('Survey-specific PC estimate of WOTH density within 100 m of point')+
+  theme(legend.position='bottom',
+        legend.box='vertical')
+```
+
+-   Lastly, the estimate is almost the same when we look at nests 2-weeks later. The model estimates indicate that for each additional nest, the point-level density estimate from the point counts increase by a factor of `r round(exp(mean(slope)), 2)`, (95% CI = `r round(exp(quantile(slope, probs=c(0.025, 0.975))), 2)`).
+
+### Summary regarding point-level models
+
+I did not go any deeper with the point-level models. We can talk about that if it would be useful, but the further analyses relate to habitat quality and population growth, and these just don't seem like point-level questions.
+
+### Point counts as an indicator of plot-level population growth
+
+-   Next we compared plot-level population growth rates
+-   We calculated plot-specific inter-annual growth rates as:
+    -   Ratio of meanDailyNestDensity in year 2 to meanDailyNestDensity in year 1 (demographic data)
+    -   Ratio of plot density estimate in year 2 to density estimate in year 1 (point counts)
+-   Again, we propagated the error in the point count estimates into the comparison using the posterior distributions of the PC estimates and compared two linear models (note, we did NOT include random year and plot effects here due to model convergence issues)
+    -   One was pcLambda \~ nestLambda
+    -   Two was pcLambda \~ nestLambda + nestLambda\^2
+-   To be safe, I cut out the lambda between 2011 and 2012 for 3 plots (Spring Mill, Seed Tick, and Martin) that changed sizes between those years.
+-   Here the linear model works better based on AIC, so I am reporting those results
+
+```{r, echo=F, warning=F, message=F, fig.cap="FIG 7. The relationship between plot-specific inter-annual population growth estimates based on point count surveys and those based on nests found by the demographic crew. The solid black line is the fitted regression line with bootstrapped confidence intervals. The dashed black line is a 1:1 line indicating identical lambda estimates from the point counts and nests."}
+
+
+
+predDf = expand.grid(plot = unique(siteVarsAnalysis$plot),
+                            year = unique(siteVarsAnalysis$year)) %>% 
+  mutate(plot = as.character(plot))
+
+
+mm = model.matrix(~plot + year + year*plot, data=predDf)
+
+predMCMC = predict(finalModel3, mm, ignore.RE=T)
+
+
+nestLambda = totNests %>%
+  select(year, plot, totNests) %>%
+  pivot_wider(names_from=year, values_from=totNests) %>%
+  mutate(lambda2012 = `2012`/`2011`,
+         lambda2013 = `2013`/`2012`,
+         lambda2014 = `2014`/`2013`) %>%
+  select(-`2011`, -`2012`, -`2013`, -`2014`) %>%
+  pivot_longer(cols=lambda2012:lambda2014, names_to='year', values_to='nestEst')
+
+predicted = data.frame(t(predMCMC$mu.0.samples)) %>% 
+  mutate(plot = predDf$plot, year = predDf$year) %>% 
+  pivot_longer(cols=c(-plot, -year), names_to='iteration') %>% 
+  mutate(iteration = str_replace(iteration, 'X', '')) %>% 
+  mutate(iteration = as.numeric(as.character(iteration))) %>% 
+  mutate(year = as.integer(as.character(year))) %>% 
+  mutate(plot = as.character(plot)) %>% 
+  mutate(plot = ifelse(plot=="McCormick's Creek", "McCormicks Creek", plot)) %>% 
+  pivot_wider(names_from=year, values_from=value) %>% 
+  mutate(lambda2012 = `2012`/`2011`,
+         lambda2013 = `2013`/`2012`,
+         lambda2014 = `2014`/`2013`) %>% 
+  select(plot, iteration, lambda2012, lambda2013, lambda2014) %>% 
+  pivot_longer(lambda2012:lambda2014, names_to='year') %>% 
+  left_join(nestLambda, by=c('plot', 'year')) %>% 
+  filter(!(plot=='Spring Mill State Park' & year=='lambda2012'),
+         !(plot=='Seed Tick' & year=='lambda2012'),
+         !(plot=='Martin State Forest' & year=='lambda2012'))
+
+# intercept = rep(NA, max(predicted$iteration))
+# slope = rep(NA, max(predicted$iteration))
+# 
+# interceptQuad = rep(NA, max(predicted$iteration))
+# slopeQuad = rep(NA, max(predicted$iteration))
+# slope2Quad = rep(NA, max(predicted$iteration))
+# 
+# aicLin = rep(NA, max(predicted$iteration))
+# aicQuad = rep(NA, max(predicted$iteration))
+# 
+# for(i in 1:max(predicted$iteration)){
+#   print(i)
+#   tmp = predicted %>% 
+#     filter(iteration==i)
+# 
+#   # model = lme4::lmer(value ~ nestEst + (1|plot) + (1|year), data=tmp)
+#   model = lm(value ~ nestEst, data=tmp)
+#   intercept[i] = coef(summary(model))[1,1]
+#   slope[i] = coef(summary(model))[2,1]
+# 
+#   # model2 = lme4::lmer(value ~ nestEst + I(nestEst^2) + (1|plot) + (1|year), data=tmp)
+#   model2 = lm(value ~ nestEst + I(nestEst^2), data=tmp)
+#   interceptQuad[i] = coef(summary(model2))[1,1]
+#   slopeQuad[i] = coef(summary(model2))[2,1]
+#   slope2Quad[i] = coef(summary(model2))[3,1]
+# 
+#   aicLin[i] = AIC(model)
+#   aicQuad[i] = AIC(model2)
+# }
+# 
+# plotLamRegResults = data.frame(
+#   'intercept'=intercept,
+#   'slope'=slope,
+#   'interceptQuad'=interceptQuad,
+#   'slopeQuad'=slopeQuad,
+#   'slope2Quad'=slope2Quad,
+#   'aicLin'=aicLin,
+#   'aicQuad'=aicQuad
+# )
+# 
+# save(plotLamRegResults, file='storedResults/plotLamRegResults.RData')
+
+
+load('storedResults/plotLamRegResults.RData')
+intercept=plotLamRegResults$intercept
+slope=plotLamRegResults$slope
+interceptQuad=plotLamRegResults$interceptQuad
+slopeQuad=plotLamRegResults$slopeQuad
+slope2Quad=plotLamRegResults$slope2Quad
+
+
+# sum(plotLamRegResults$aicLin < plotLamRegResults$aicQuad)
+
+simLams = seq(0, 5, 0.1)
+
+ests = rep(NA, length(simLams))
+lcl = rep(NA, length(simLams))
+ucl = rep(NA, length(simLams))
+
+for(i in 1:length(simLams)){
+  tmp = intercept + slope*simLams[i]
+  ests[i] = mean(tmp)
+  lcl[i] = quantile(tmp, probs=0.025)
+  ucl[i] = quantile(tmp, probs=0.975)
+}
+
+regPreds = data.frame(
+  'nests' = simLams,
+  'predPC' = ests,
+  'lclPC' = lcl,
+  'uclPC' = ucl
+)
+
+plotComparison = predicted %>% 
+  group_by(plot, year) %>% 
+  summarise(estimate = mean(value),
+         lcl = quantile(value, probs=0.025),
+         ucl = quantile(value, probs=0.975),
+         nestEst = max(nestEst)) %>% 
+  ungroup() %>% 
+  mutate(year = as.factor(year))
+
+
+ggplot()+
+  geom_abline(intercept=0, slope=1, col='black', linetype='dashed')+
+  geom_ribbon(data=regPreds, aes(x=nests, ymin=lcl, ymax=ucl), alpha=0.2)+
+  geom_line(data=regPreds, aes(x=nests, y=predPC), color='black')+
+  geom_point(data=plotComparison, aes(x=nestEst, y=estimate, color=plot, pch=year))+
+  theme_bw()+
+  theme(panel.grid=element_blank())+
+  geom_errorbar(data=plotComparison, aes(x=nestEst, y=estimate, color=plot, ymin=lcl, ymax=ucl))+
+  xlab('Lambda estimates based on ratio of nests found')+
+  ylab('Lambda estimates based on point count ratios')+
+  theme(legend.position='bottom',
+        legend.box='vertical')
+```
+
+-   There is a positive relationship here. For every 1-unit increase in lambda based on nests found, the point count estimate of lambda increases by `r round(mean(slope), 2)` (95% CI = `r round(quantile(slope, probs=c(0.025, 0.975)),2)`)
+
+### Point counts as an indicator of plot-level habitat quality - Quick discussion of total fledglings vs. fledglings per nest
+
+When I first compared point count data with fledgling data, I used fledglings/nest for the latter variable. Matt then asked, "why per capita fledged versus just the total fledged at the plot scale? We often obsess about per capita reproduction, but for habitat analyses, often what matters more is area-based measures of reproduction and survival (i.e., is this area producing a lot of birds)?"
+
+My response to that is this: there is an intuitive and positive relationship between nest density and fledgling density (Figure 8). In other words, more nests, more fledglings. But we know that number of nests could be a misleading indicator of habitat quality for a number of reasons. This is why I am falling back on fledglings/nest. If anyone still disagrees with this, let's set up a time to talk.
+
+```{r, echo=F, warning=F, message=F, fig.cap="FIG 8. The relationship nest density and fledgling density."}
+
+tmp = totNests %>% 
+  mutate(nestsPerArea = totNests/area,
+         fledglingsPerArea = fledged/area)
+
+ggplot(tmp, aes(x=nestsPerArea, y=fledglingsPerArea))+
+  geom_point()+
+  theme_bw()+
+  theme(panel.grid=element_blank())+
+  geom_smooth(method='lm')
+
+```
+
+### Point counts as an indicator of plot-level habitat quality
+
+-   I won't get in the weeds on the methods. They're similar to what is described above except that now the response variable is WOTH density estimated from the point counts and the explanatory variable is fledglings per nest as a metric of habitat quality.
+
+```{r, echo=F, warning=F, message=F, fig.cap="FIG 9. The relationship between year-by-plot level densities estimated from the fitted point count model and the number of fledglings per nest. The solid black line is the fitted regression line with bootstrapped confidence intervals."}
+
+predDf = expand.grid(plot = unique(siteVarsAnalysis$plot),
+                            year = unique(siteVarsAnalysis$year)) %>% 
+  mutate(plot = as.character(plot))
+
+mm = model.matrix(~plot + year + year*plot, data=predDf)
+
+predMCMC = predict(finalModel3, mm, ignore.RE=T)
+
+# predicted = data.frame(predMCMC$mu.0.samples)
+
+tmp = t(predMCMC$mu.0.samples)
+
+
+predicted = data.frame(t(predMCMC$mu.0.samples)) %>% 
+  mutate(plot = predDf$plot, year = predDf$year) %>% 
+  pivot_longer(cols=c(-plot, -year), names_to='iteration') %>% 
+  mutate(iteration = str_replace(iteration, 'X', '')) %>% 
+  mutate(iteration = as.numeric(as.character(iteration))) %>% 
+  mutate(year = as.integer(as.character(year))) %>% 
+  mutate(plot = as.character(plot)) %>% 
+  mutate(plot = ifelse(plot=="McCormick's Creek", "McCormicks Creek", plot)) %>% 
+  left_join(totNests, by=c('plot', 'year'))
+
+
+# intercept = rep(NA, max(predicted$iteration))
+# slope = rep(NA, max(predicted$iteration))
+# 
+# interceptQuad = rep(NA, max(predicted$iteration))
+# slopeQuad = rep(NA, max(predicted$iteration))
+# slope2Quad = rep(NA, max(predicted$iteration))
+# 
+# aicLin = rep(NA, max(predicted$iteration))
+# aicQuad = rep(NA, max(predicted$iteration))
+# 
+# 
+# for(i in 1:max(predicted$iteration)){
+#   print(i)
+#   tmp = predicted %>%
+#     filter(iteration==i)
+# 
+#   model = lme4::lmer(value ~ fledgedPerNest + (1|plot) + (1|year), data=tmp)
+#   intercept[i] = coef(summary(model))[1,1]
+#   slope[i] = coef(summary(model))[2,1]
+#   aicLin[i] = AIC(model)
+# 
+#   model2 = lme4::lmer(value ~ fledgedPerNest + I(fledgedPerNest^2) + (1|plot) + (1|year), data=tmp)
+# 
+#   interceptQuad[i] = coef(summary(model2))[1,1]
+#   slopeQuad[i] = coef(summary(model2))[2,1]
+#   slope2Quad[i] = coef(summary(model2))[3,1]
+#   aicQuad[i] = AIC(model2)
+# }
+# 
+# 
+# plotRegResults = data.frame(
+#   'intercept'=intercept,
+#   'slope'=slope,
+#   'interceptQuad'=interceptQuad,
+#   'slopeQuad'=slopeQuad,
+#   'slope2Quad'=slope2Quad,
+#   'aicLin'=aicLin,
+#   'aicQuad'=aicQuad
+# )
+# 
+# save(plotRegResults, file='storedResults/plotHabQualityFledgedNest.RData')
+
+load('storedResults/plotHabQualityFledgedNest.RData')
+intercept=plotRegResults$intercept
+slope=plotRegResults$slope
+interceptQuad=plotRegResults$interceptQuad
+slopeQuad=plotRegResults$slopeQuad
+slope2Quad=plotRegResults$slope2Quad
+
+
+# sum(plotRegResults$aicLin < plotRegResults$aicQuad)
+
+simFledgedPerNest = seq(0, 3, 0.1)
+
+ests = rep(NA, length(simFledgedPerNest))
+lcl = rep(NA, length(simFledgedPerNest))
+ucl = rep(NA, length(simFledgedPerNest))
+
+for(i in 1:length(simFledgedPerNest)){
+  tmp = intercept + slope*simFledgedPerNest[i]
+  # tmp = interceptQuad + slopeQuad*simFledgedPerNest[i] + slope2Quad*simFledgedPerNest[i]*simFledgedPerNest[i]
+  ests[i] = mean(tmp)
+  lcl[i] = quantile(tmp, probs=0.025)
+  ucl[i] = quantile(tmp, probs=0.975)
+}
+
+regPreds = data.frame(
+  'fledgedPerNest' = simFledgedPerNest,
+  'predPC' = ests,
+  'lclPC' = lcl,
+  'uclPC' = ucl
+)
+
+plotComparison = predicted %>% 
+  group_by(plot, year) %>% 
+  summarise(estimate = mean(value),
+         lcl = quantile(value, probs=0.025),
+         ucl = quantile(value, probs=0.975),
+         fledgedPerNest = max(fledgedPerNest)) %>% 
+  ungroup() %>% 
+  mutate(year = as.factor(as.character(year)))
+
+
+ggplot()+
+  # geom_abline(intercept=0, slope=1, col='black', linetype='dashed')+
+  geom_ribbon(data=regPreds, aes(x=fledgedPerNest, ymin=lcl, ymax=ucl), alpha=0.2)+
+  geom_line(data=regPreds, aes(x=fledgedPerNest, y=predPC), color='black')+
+  geom_point(data=plotComparison, aes(x=fledgedPerNest, y=estimate, color=plot, pch=year))+
+  theme_bw()+
+  theme(panel.grid=element_blank())+
+  geom_errorbar(data=plotComparison, aes(x=fledgedPerNest, y=estimate, color=plot, ymin=lcl, ymax=ucl))+
+  xlab('Fledglings per nest')+
+  ylab('Density of Wood Thrush estimated by point count surveys')+
+  theme(legend.position='bottom',
+        legend.box='vertical')
+```
+
+```{r}
+#| eval: false
+#| include: false
+
+predDf = expand.grid(plot = unique(siteVarsAnalysis$plot),
+                            year = unique(siteVarsAnalysis$year)) %>% 
+  mutate(plot = as.character(plot))
+
+mm = model.matrix(~plot + year + year*plot, data=predDf)
+
+predMCMC = predict(finalModel3, mm, ignore.RE=T)
+
+# predicted = data.frame(predMCMC$mu.0.samples)
+
+tmp = t(predMCMC$mu.0.samples)
+
+
+predicted = data.frame(t(predMCMC$mu.0.samples)) %>% 
+  mutate(plot = predDf$plot, year = predDf$year) %>% 
+  pivot_longer(cols=c(-plot, -year), names_to='iteration') %>% 
+  mutate(iteration = str_replace(iteration, 'X', '')) %>% 
+  mutate(iteration = as.numeric(as.character(iteration))) %>% 
+  mutate(year = as.integer(as.character(year))) %>% 
+  mutate(plot = as.character(plot)) %>% 
+  mutate(plot = ifelse(plot=="McCormick's Creek", "McCormicks Creek", plot)) %>% 
+  left_join(totNests, by=c('plot', 'year'))
+
+
+# intercept = rep(NA, max(predicted$iteration))
+# slope = rep(NA, max(predicted$iteration))
+# 
+# interceptQuad = rep(NA, max(predicted$iteration))
+# slopeQuad = rep(NA, max(predicted$iteration))
+# slope2Quad = rep(NA, max(predicted$iteration))
+# 
+# aicLin = rep(NA, max(predicted$iteration))
+# aicQuad = rep(NA, max(predicted$iteration))
+# 
+# 
+# for(i in 1:max(predicted$iteration)){
+#   print(i)
+#   tmp = predicted %>%
+#     filter(iteration==i)
+# 
+#   model = lme4::lmer(value ~ fledged + (1|plot) + (1|year), data=tmp)
+#   intercept[i] = coef(summary(model))[1,1]
+#   slope[i] = coef(summary(model))[2,1]
+#   aicLin[i] = AIC(model)
+# 
+#   model2 = lme4::lmer(value ~ fledged + I(fledged^2) + (1|plot) + (1|year), data=tmp)
+# 
+#   interceptQuad[i] = coef(summary(model2))[1,1]
+#   slopeQuad[i] = coef(summary(model2))[2,1]
+#   slope2Quad[i] = coef(summary(model2))[3,1]
+#   aicQuad[i] = AIC(model2)
+# }
+# 
+# 
+# plotRegResults = data.frame(
+#   'intercept'=intercept,
+#   'slope'=slope,
+#   'interceptQuad'=interceptQuad,
+#   'slopeQuad'=slopeQuad,
+#   'slope2Quad'=slope2Quad,
+#   'aicLin'=aicLin,
+#   'aicQuad'=aicQuad
+# )
+# 
+# save(plotRegResults, file='storedResults/plotHabQuality.RData')
+
+load('storedResults/plotHabQuality.RData')
+intercept=plotRegResults$intercept
+slope=plotRegResults$slope
+interceptQuad=plotRegResults$interceptQuad
+slopeQuad=plotRegResults$slopeQuad
+slope2Quad=plotRegResults$slope2Quad
+
+
+sum(plotRegResults$aicLin < plotRegResults$aicQuad)
+
+simFledged = seq(0, 90, 1)
+
+ests = rep(NA, length(simFledged))
+lcl = rep(NA, length(simFledged))
+ucl = rep(NA, length(simFledged))
+
+for(i in 1:length(simFledged)){
+  tmp = intercept + slope*simFledged[i]
+  # tmp = interceptQuad + slopeQuad*simFledged[i] + slope2Quad*simFledged[i]*simFledged[i]
+  ests[i] = mean(tmp)
+  lcl[i] = quantile(tmp, probs=0.025)
+  ucl[i] = quantile(tmp, probs=0.975)
+}
+
+regPreds = data.frame(
+  'fledged' = simFledged,
+  'predPC' = ests,
+  'lclPC' = lcl,
+  'uclPC' = ucl
+)
+
+plotComparison = predicted %>% 
+  group_by(plot, year) %>% 
+  summarise(estimate = mean(value),
+         lcl = quantile(value, probs=0.025),
+         ucl = quantile(value, probs=0.975),
+         fledged = max(fledged)) %>% 
+  ungroup() %>% 
+  mutate(year = as.factor(as.character(year)))
+
+
+ggplot()+
+  # geom_abline(intercept=0, slope=1, col='black', linetype='dashed')+
+  geom_ribbon(data=regPreds, aes(x=fledged, ymin=lcl, ymax=ucl), alpha=0.2)+
+  geom_line(data=regPreds, aes(x=fledged, y=predPC), color='black')+
+  geom_point(data=plotComparison, aes(x=fledged, y=estimate, color=plot, pch=year))+
+  theme_bw()+
+  theme(panel.grid=element_blank())+
+  geom_errorbar(data=plotComparison, aes(x=fledged, y=estimate, color=plot, ymin=lcl, ymax=ucl))+
+  xlab('Total fledglings from nests active during point count period')+
+  ylab('Density of Wood Thrush estimated by point count surveys')+
+  theme(legend.position='bottom',
+        legend.box='vertical')
+```
+
+-   This one is pretty straightforward... there really isn't anything here.
+-   The estimate of the slope is `r round(mean(slope), 2)` (95% CI = `r round(quantile(slope, probs=c(0.025, 0.975)), 2)`)
+
+### Point count estimates of lambda vs. plot-level habitat quality
+
+-   Again, I don't need to reiterate the weeds, but we're modeling the point count estimate of lambda from year t to year t+1 as a function of fledglings per nest in year t.
+
+```{r, echo=F, warning=F, message=F, fig.cap="FIG 10. The relationship between inter-annual growth rates estimated from the fitted point count model and the number of fledglings per nest. The solid black line is the fitted regression line with bootstrapped confidence intervals."}
+
+
+predDf = expand.grid(plot = unique(siteVarsAnalysis$plot),
+                            year = unique(siteVarsAnalysis$year)) %>% 
+  mutate(plot = as.character(plot))
+
+
+mm = model.matrix(~plot + year + year*plot, data=predDf)
+
+predMCMC = predict(finalModel3, mm, ignore.RE=T)
+
+
+nestLambda = totNests %>%
+  select(year, plot, fledgedPerNest) %>%
+  mutate(year = ifelse(year==2011, 'lambda2012', year)) %>% 
+  mutate(year = ifelse(year==2012, 'lambda2013', year)) %>% 
+  mutate(year = ifelse(year==2013, 'lambda2014', year)) %>% 
+  filter(year!=2014)
+
+predicted = data.frame(t(predMCMC$mu.0.samples)) %>% 
+  mutate(plot = predDf$plot, year = predDf$year) %>% 
+  pivot_longer(cols=c(-plot, -year), names_to='iteration') %>% 
+  mutate(iteration = str_replace(iteration, 'X', '')) %>% 
+  mutate(iteration = as.numeric(as.character(iteration))) %>% 
+  mutate(year = as.integer(as.character(year))) %>% 
+  mutate(plot = as.character(plot)) %>% 
+  mutate(plot = ifelse(plot=="McCormick's Creek", "McCormicks Creek", plot)) %>% 
+  pivot_wider(names_from=year, values_from=value) %>% 
+  mutate(lambda2012 = `2012`/`2011`,
+         lambda2013 = `2013`/`2012`,
+         lambda2014 = `2014`/`2013`) %>% 
+  select(plot, iteration, lambda2012, lambda2013, lambda2014) %>% 
+  pivot_longer(lambda2012:lambda2014, names_to='year') %>% 
+  left_join(nestLambda, by=c('plot', 'year')) %>% 
+  filter(!(plot=='Spring Mill State Park' & year=='lambda2012'),
+         !(plot=='Seed Tick' & year=='lambda2012'),
+         !(plot=='Martin State Forest' & year=='lambda2012'))
+
+# intercept = rep(NA, max(predicted$iteration))
+# slope = rep(NA, max(predicted$iteration))
+# 
+# interceptQuad = rep(NA, max(predicted$iteration))
+# slopeQuad = rep(NA, max(predicted$iteration))
+# slope2Quad = rep(NA, max(predicted$iteration))
+# 
+# aicLin = rep(NA, max(predicted$iteration))
+# aicQuad = rep(NA, max(predicted$iteration))
+# 
+# for(i in 1:max(predicted$iteration)){
+#   print(i)
+#   tmp = predicted %>%
+#     filter(iteration==i)
+# 
+#   # model = lme4::lmer(value ~ fledgedPerNest + (1|plot) + (1|year), data=tmp)
+#   model = lm(value ~ fledgedPerNest, data=tmp)
+#   intercept[i] = coef(summary(model))[1,1]
+#   slope[i] = coef(summary(model))[2,1]
+# 
+#   # model2 = lme4::lmer(value ~ fledgedPerNest + I(fledgedPerNest^2) + (1|plot) + (1|year), data=tmp)
+#   model2 = lm(value ~ fledgedPerNest + I(fledgedPerNest^2), data=tmp)
+#   interceptQuad[i] = coef(summary(model2))[1,1]
+#   slopeQuad[i] = coef(summary(model2))[2,1]
+#   slope2Quad[i] = coef(summary(model2))[3,1]
+# 
+#   aicLin[i] = AIC(model)
+#   aicQuad[i] = AIC(model2)
+# }
+# 
+# plotLamRegResults = data.frame(
+#   'intercept'=intercept,
+#   'slope'=slope,
+#   'interceptQuad'=interceptQuad,
+#   'slopeQuad'=slopeQuad,
+#   'slope2Quad'=slope2Quad,
+#   'aicLin'=aicLin,
+#   'aicQuad'=aicQuad
+# )
+# 
+# save(plotLamRegResults, file='storedResults/plotHabQualityFledgedNest.RData')
+
+
+load('storedResults/plotHabQualityFledgedNest.RData')
+intercept=plotLamRegResults$intercept
+slope=plotLamRegResults$slope
+interceptQuad=plotLamRegResults$interceptQuad
+slopeQuad=plotLamRegResults$slopeQuad
+slope2Quad=plotLamRegResults$slope2Quad
+
+
+# sum(plotLamRegResults$aicLin < plotLamRegResults$aicQuad)
+
+simFledgedNest = seq(0, 3, 0.1)
+
+ests = rep(NA, length(simFledgedNest))
+lcl = rep(NA, length(simFledgedNest))
+ucl = rep(NA, length(simFledgedNest))
+
+for(i in 1:length(simFledgedNest)){
+  tmp = intercept + slope*simFledgedNest[i]
+  ests[i] = mean(tmp)
+  lcl[i] = quantile(tmp, probs=0.025)
+  ucl[i] = quantile(tmp, probs=0.975)
+}
+
+regPreds = data.frame(
+  'fledgedNest'= simFledgedNest,
+  'predPC' = ests,
+  'lclPC' = lcl,
+  'uclPC' = ucl
+)
+
+plotComparison = predicted %>% 
+  group_by(plot, year) %>% 
+  summarise(estimate = mean(value),
+         lcl = quantile(value, probs=0.025),
+         ucl = quantile(value, probs=0.975),
+         fledgedNest = max(fledgedPerNest)) %>% 
+  ungroup() %>% 
+  mutate(year = as.factor(year))
+
+
+ggplot()+
+  # geom_abline(intercept=0, slope=1, col='black', linetype='dashed')+
+  geom_ribbon(data=regPreds, aes(x=fledgedNest, ymin=lcl, ymax=ucl), alpha=0.2)+
+  geom_line(data=regPreds, aes(x=fledgedNest, y=predPC), color='black')+
+  geom_point(data=plotComparison, aes(x=fledgedNest, y=estimate, color=plot, pch=year))+
+  theme_bw()+
+  theme(panel.grid=element_blank())+
+  geom_errorbar(data=plotComparison, aes(x=fledgedNest, y=estimate, color=plot, ymin=lcl, ymax=ucl))+
+  xlab('Fledglings per nests active during point count period')+
+  ylab('Lambda estimates based on point count ratios')+
+  theme(legend.position='bottom',
+        legend.box='vertical')
+
+```
+
+```{r}
+#| eval: false
+#| include: false
+
+predDf = expand.grid(plot = unique(siteVarsAnalysis$plot),
+                            year = unique(siteVarsAnalysis$year)) %>% 
+  mutate(plot = as.character(plot))
+
+
+mm = model.matrix(~plot + year + year*plot, data=predDf)
+
+predMCMC = predict(finalModel3, mm, ignore.RE=T)
+
+
+nestLambda = totNests %>%
+  select(year, plot, fledged) %>%
+  mutate(year = ifelse(year==2011, 'lambda2012', year)) %>% 
+  mutate(year = ifelse(year==2012, 'lambda2013', year)) %>% 
+  mutate(year = ifelse(year==2013, 'lambda2014', year)) %>% 
+  filter(year!=2014)
+
+predicted = data.frame(t(predMCMC$mu.0.samples)) %>% 
+  mutate(plot = predDf$plot, year = predDf$year) %>% 
+  pivot_longer(cols=c(-plot, -year), names_to='iteration') %>% 
+  mutate(iteration = str_replace(iteration, 'X', '')) %>% 
+  mutate(iteration = as.numeric(as.character(iteration))) %>% 
+  mutate(year = as.integer(as.character(year))) %>% 
+  mutate(plot = as.character(plot)) %>% 
+  mutate(plot = ifelse(plot=="McCormick's Creek", "McCormicks Creek", plot)) %>% 
+  pivot_wider(names_from=year, values_from=value) %>% 
+  mutate(lambda2012 = `2012`/`2011`,
+         lambda2013 = `2013`/`2012`,
+         lambda2014 = `2014`/`2013`) %>% 
+  select(plot, iteration, lambda2012, lambda2013, lambda2014) %>% 
+  pivot_longer(lambda2012:lambda2014, names_to='year') %>% 
+  left_join(nestLambda, by=c('plot', 'year')) %>% 
+  filter(!(plot=='Spring Mill State Park' & year=='lambda2012'),
+         !(plot=='Seed Tick' & year=='lambda2012'),
+         !(plot=='Martin State Forest' & year=='lambda2012'))
+
+# intercept = rep(NA, max(predicted$iteration))
+# slope = rep(NA, max(predicted$iteration))
+# 
+# interceptQuad = rep(NA, max(predicted$iteration))
+# slopeQuad = rep(NA, max(predicted$iteration))
+# slope2Quad = rep(NA, max(predicted$iteration))
+# 
+# aicLin = rep(NA, max(predicted$iteration))
+# aicQuad = rep(NA, max(predicted$iteration))
+# 
+# for(i in 1:max(predicted$iteration)){
+#   print(i)
+#   tmp = predicted %>%
+#     filter(iteration==i)
+# 
+#   # model = lme4::lmer(value ~ fledged + (1|plot) + (1|year), data=tmp)
+#   model = lm(value ~ fledged, data=tmp)
+#   intercept[i] = coef(summary(model))[1,1]
+#   slope[i] = coef(summary(model))[2,1]
+# 
+#   # model2 = lme4::lmer(value ~ fledged + I(fledged^2) + (1|plot) + (1|year), data=tmp)
+#   model2 = lm(value ~ fledged + I(fledged^2), data=tmp)
+#   interceptQuad[i] = coef(summary(model2))[1,1]
+#   slopeQuad[i] = coef(summary(model2))[2,1]
+#   slope2Quad[i] = coef(summary(model2))[3,1]
+# 
+#   aicLin[i] = AIC(model)
+#   aicQuad[i] = AIC(model2)
+# }
+# 
+# plotLamRegResults = data.frame(
+#   'intercept'=intercept,
+#   'slope'=slope,
+#   'interceptQuad'=interceptQuad,
+#   'slopeQuad'=slopeQuad,
+#   'slope2Quad'=slope2Quad,
+#   'aicLin'=aicLin,
+#   'aicQuad'=aicQuad
+# )
+# 
+# save(plotLamRegResults, file='storedResults/plotLamFledge.RData')
+
+
+load('storedResults/plotLamFledge.RData')
+intercept=plotLamRegResults$intercept
+slope=plotLamRegResults$slope
+interceptQuad=plotLamRegResults$interceptQuad
+slopeQuad=plotLamRegResults$slopeQuad
+slope2Quad=plotLamRegResults$slope2Quad
+
+
+sum(plotLamRegResults$aicLin < plotLamRegResults$aicQuad)
+
+simLams = seq(0, 90, 1)
+
+ests = rep(NA, length(simLams))
+lcl = rep(NA, length(simLams))
+ucl = rep(NA, length(simLams))
+
+for(i in 1:length(simLams)){
+  tmp = intercept + slope*simLams[i]
+  ests[i] = mean(tmp)
+  lcl[i] = quantile(tmp, probs=0.025)
+  ucl[i] = quantile(tmp, probs=0.975)
+}
+
+regPreds = data.frame(
+  'fledged'= simLams,
+  'predPC' = ests,
+  'lclPC' = lcl,
+  'uclPC' = ucl
+)
+
+plotComparison = predicted %>% 
+  group_by(plot, year) %>% 
+  summarise(estimate = mean(value),
+         lcl = quantile(value, probs=0.025),
+         ucl = quantile(value, probs=0.975),
+         fledged = max(fledged)) %>% 
+  ungroup() %>% 
+  mutate(year = as.factor(year))
+
+
+ggplot()+
+  # geom_abline(intercept=0, slope=1, col='black', linetype='dashed')+
+  geom_ribbon(data=regPreds, aes(x=fledged, ymin=lcl, ymax=ucl), alpha=0.2)+
+  geom_line(data=regPreds, aes(x=fledged, y=predPC), color='black')+
+  geom_point(data=plotComparison, aes(x=fledged, y=estimate, color=plot, pch=year))+
+  theme_bw()+
+  theme(panel.grid=element_blank())+
+  geom_errorbar(data=plotComparison, aes(x=fledged, y=estimate, color=plot, ymin=lcl, ymax=ucl))+
+  xlab('Total fledglings from nests active during point count period')+
+  ylab('Lambda estimates based on point count ratios')+
+  theme(legend.position='bottom',
+        legend.box='vertical')
+```
+
+-   Again, not really much here.
+-   The estimate of the slope is `r round(mean(slope), 2)` (95% CI = `r round(quantile(slope, probs=c(0.025, 0.975)), 2)`)
+
+# All the same analyses using 50 m radius point counts
+
+Well, not all of them. Matt suggested redoing these analyses using 50 m radius point count stations. With that in mind, I just redid the first two. As you can see, it doesn't really change the story.
+
+```{r, echo=F, warning=F, message=F, fig.cap="FIG 11. The relationship between year-by-plot level densities estimated from the fitted point count model and the true density of active nests on plots. The solid black line is the fitted regression line with bootstrapped confidence intervals. The dashed black line is a 1:1 line indicating identical density estimates from the point counts and nests."}
+
+predDf = expand.grid(plot = unique(siteVarsAnalysis$plot),
+                            year = unique(siteVarsAnalysis$year)) %>% 
+  mutate(plot = as.character(plot))
+
+mm = model.matrix(~plot + year + year*plot, data=predDf)
+
+rm(finalModel3)
+load('finalModel3_50.RData')
+
+predMCMC = predict(finalModel3, mm, ignore.RE=T)
+
+# predicted = data.frame(predMCMC$mu.0.samples)
+
+tmp = t(predMCMC$mu.0.samples)
+
+
+predicted = data.frame(t(predMCMC$mu.0.samples)) %>% 
+  mutate(plot = predDf$plot, year = predDf$year) %>% 
+  pivot_longer(cols=c(-plot, -year), names_to='iteration') %>% 
+  mutate(iteration = str_replace(iteration, 'X', '')) %>% 
+  mutate(iteration = as.numeric(as.character(iteration))) %>% 
+  mutate(year = as.integer(as.character(year))) %>% 
+  mutate(plot = as.character(plot)) %>% 
+  mutate(plot = ifelse(plot=="McCormick's Creek", "McCormicks Creek", plot))
+
+
+# intercept = rep(NA, max(predicted$iteration))
+# slope = rep(NA, max(predicted$iteration))
+# 
+# interceptQuad = rep(NA, max(predicted$iteration))
+# slopeQuad = rep(NA, max(predicted$iteration))
+# slope2Quad = rep(NA, max(predicted$iteration))
+# 
+# aicLin = rep(NA, max(predicted$iteration))
+# aicQuad = rep(NA, max(predicted$iteration))
+
+# 
+# for(i in 1:max(predicted$iteration)){
+#   print(i)
+#   tmp = predicted %>%
+#     filter(iteration==i) %>%
+#     left_join(dailyNests, by=c('plot', 'year'))
+# 
+#   model = lme4::lmer(value ~ meanNestDensity + (1|plot) + (1|year), data=tmp)
+#   intercept[i] = coef(summary(model))[1,1]
+#   slope[i] = coef(summary(model))[2,1]
+#   aicLin[i] = AIC(model)
+# 
+#   model2 = lme4::lmer(value ~ meanNestDensity + I(meanNestDensity^2) + (1|plot) + (1|year), data=tmp)
+# 
+#   interceptQuad[i] = coef(summary(model2))[1,1]
+#   slopeQuad[i] = coef(summary(model2))[2,1]
+#   slope2Quad[i] = coef(summary(model2))[3,1]
+#   aicQuad[i] = AIC(model2)
+# }
+# 
+# 
+# plotRegResults = data.frame(
+#   'intercept'=intercept,
+#   'slope'=slope,
+#   'interceptQuad'=interceptQuad,
+#   'slopeQuad'=slopeQuad,
+#   'slope2Quad'=slope2Quad,
+#   'aicLin'=aicLin,
+#   'aicQuad'=aicQuad
+# )
+# 
+# save(plotRegResults, file='storedResults/plotRegResults_50.RData')
+
+rm(plotRegResults)
+
+load('storedResults/plotRegResults_50.RData')
+intercept=plotRegResults$intercept
+slope=plotRegResults$slope
+interceptQuad=plotRegResults$interceptQuad
+slopeQuad=plotRegResults$slopeQuad
+slope2Quad=plotRegResults$slope2Quad
+
+
+# sum(plotRegResults$aicLin < plotRegResults$aicQuad)
+
+simNests = seq(0, 0.5, 0.01)
+
+ests = rep(NA, length(simNests))
+lcl = rep(NA, length(simNests))
+ucl = rep(NA, length(simNests))
+
+for(i in 1:length(simNests)){
+  tmp = interceptQuad + slopeQuad*simNests[i] + slope2Quad*simNests[i]*simNests[i]
+  ests[i] = mean(tmp)
+  lcl[i] = quantile(tmp, probs=0.025)
+  ucl[i] = quantile(tmp, probs=0.975)
+}
+
+regPreds = data.frame(
+  'nests' = simNests,
+  'predPC' = ests,
+  'lclPC' = lcl,
+  'uclPC' = ucl
+)
+
+plotComparison = predicted %>% 
+  group_by(plot, year) %>% 
+  summarise(estimate = mean(value),
+         lcl = quantile(value, probs=0.025),
+         ucl = quantile(value, probs=0.975)) %>% 
+  ungroup() %>% 
+  full_join(dailyNests, by=c('plot', 'year')) %>% 
+  mutate(year = as.factor(year))
+
+
+ggplot()+
+  geom_abline(intercept=0, slope=1, col='black', linetype='dashed')+
+  geom_ribbon(data=regPreds, aes(x=nests, ymin=lcl, ymax=ucl), alpha=0.2)+
+  geom_line(data=regPreds, aes(x=nests, y=predPC), color='black')+
+  geom_point(data=plotComparison, aes(x=meanNestDensity, y=estimate, color=plot, pch=year))+
+  theme_bw()+
+  theme(panel.grid=element_blank())+
+  geom_errorbar(data=plotComparison, aes(x=meanNestDensity, y=estimate, color=plot, ymin=lcl, ymax=ucl))+
+  xlab('Density of active nests on plot during point count period')+
+  ylab('Density of Wood Thrush estimated by point count surveys')+
+  theme(legend.position='bottom',
+        legend.box='vertical')
+```
+
+```{r, echo=F, warning=F, message=F, fig.cap="FIG 12. The relationship between survey-specific estimates of density from the fitted point count model and the true density of active nests within 50 m of the point count station at the time the survey was conducted. The solid black line is the fitted regression line with bootstrapped confidence intervals. The dashed black line is a 1:1 line indicating identical density estimates from the point counts and nests."}
+
+pcOverlap = read.csv('PC overlap with Demo plots.csv') %>%
+  select(-X)
+
+pointLocs = analysisData2$covs %>% 
+  select(point, date, year, plot, julian) %>% 
+  left_join(locations.og %>% select(point, utmX, utmY), by='point') %>% 
+  st_as_sf(coords=c('utmX', 'utmY'), crs=crs(plotLocs)) %>%
+  mutate(year = as.numeric(as.character(year))) %>%
+  left_join(pcOverlap, by='point') %>%
+  mutate(nests = NA) 
+  
+pointLocsBuff = st_buffer(pointLocs, 50) %>%
+  mutate(date = pointLocs$date,
+         julian = pointLocs$julian)
+
+nestLocs = nestsSpaceTime %>%
+  st_as_sf(coords=c('X', 'Y'), crs=crs(pointLocsBuff)) %>%
+  mutate(year = as.numeric(year)) %>% 
+  rename(nestYear = year)
+
+for(i in 1:nrow(pointLocs)){
+  pc = pointLocsBuff[i,]
+  nests = st_intersection(pc, nestLocs) %>%
+    filter(year==nestYear & clutchInitiation <= julian & fledgefail >= julian)
+  pointLocs$nests[i] = nrow(nests)
+}
+
+
+# intercept = rep(NA, max(predicted$iteration))
+# slope = rep(NA, max(predicted$iteration))
+# 
+# interceptQuad = rep(NA, max(predicted$iteration))
+# slopeQuad = rep(NA, max(predicted$iteration))
+# slope2Quad = rep(NA, max(predicted$iteration))
+# 
+# aicLin = rep(NA, max(predicted$iteration))
+# aicQuad = rep(NA, max(predicted$iteration))
+# 
+# 
+# tmp = analysisData2$covs
+# 
+# all(tmp$date==pointLocs$date)
+# 
+# 
+# 
+# for(i in 1:max(predicted$iteration)){
+#   print(i)
+#   tmp = pointLocs %>%
+#     mutate(ests = finalModel3$N.samples[i,],
+#            point = as.factor(as.character(point))) %>%
+#   filter(!(year==2011 & percOverlap2011 < 0.8)) %>%
+#   filter(!(year > 2011 & percOverlap2012 < 0.8)) %>%
+#     mutate(year = as.factor(as.character(year)))
+# 
+#   model = lme4::glmer(ests ~ nests + (1|point) + (1|year), family=poisson, data=tmp)
+#   intercept[i] = coef(summary(model))[1,1]
+#   slope[i] = coef(summary(model))[2,1]
+# 
+#   model2 = lme4::glmer(ests ~ nests + I(nests^2) + (1|point) + (1|year), family=poisson, data=tmp)
+#   interceptQuad[i] = coef(summary(model2))[1,1]
+#   slopeQuad[i] = coef(summary(model2))[2,1]
+#   slope2Quad[i] = coef(summary(model2))[3,1]
+# 
+#   aicLin[i] = AIC(model)
+#   aicQuad[i] = AIC(model2)
+# }
+# 
+# 
+# pointRegResults = data.frame(
+#   'intercept'=intercept,
+#   'slope'=slope,
+#   'interceptQuad'=interceptQuad,
+#   'slopeQuad'=slopeQuad,
+#   'slope2Quad'=slope2Quad,
+#   'aicLin'=aicLin,
+#   'aicQuad'=aicQuad
+# )
+# 
+# save(pointRegResults, file='storedResults/pointRegResults_50.RData')
+
+
+
+load('storedResults/pointRegResults_50.RData')
+intercept=pointRegResults$intercept
+slope=pointRegResults$slope
+
+# sum(pointRegResults$aicLin < pointRegResults$aicQuad)
+
+simNests = seq(0, 4, 0.05)
+
+ests = rep(NA, length(simNests))
+lcl = rep(NA, length(simNests))
+ucl = rep(NA, length(simNests))
+
+for(i in 1:length(simNests)){
+  tmp = intercept + slope*simNests[i]
+  ests[i] = exp(mean(tmp))
+  lcl[i] = exp(quantile(tmp, probs=0.025))
+  ucl[i] = exp(quantile(tmp, probs=0.975))
+}
+
+
+regPreds = data.frame(
+  'nests' = simNests,
+  'predPC' = ests,
+  'lclPC' = lcl,
+  'uclPC' = ucl
+) %>% 
+  mutate(nestDens = simNests/((pi*100^2)/10000),
+         predPC = predPC/((pi*100^2)/10000),
+         lclPC = lclPC/((pi*100^2)/10000),
+         uclPC = uclPC/((pi*100^2)/10000))
+
+
+pointComparison =  data.frame(pointLocs) %>% 
+  mutate(estimate = colMeans(finalModel3$N.samples, na.rm=T),
+         lcl = apply(finalModel3$N.samples, 2, quantile, probs=0.025, na.rm=T),
+         ucl = apply(finalModel3$N.samples, 2, quantile, probs=0.975, na.rm=T)) %>% 
+  filter(!(year==2011 & percOverlap2011 < 0.8)) %>%
+  filter(!(year > 2011 & percOverlap2012 < 0.8)) %>% 
+  mutate(nestDens = nests/((pi*100^2)/10000),
+         estimate = estimate/((pi*100^2)/10000),
+         lcl = lcl/((pi*100^2)/10000),
+         ucl = ucl/((pi*100^2)/10000))
+
+ggplot()+
+  geom_abline(intercept=0, slope=1, col='black', linetype='dashed')+
+  geom_ribbon(data=regPreds, aes(x=nestDens, ymin=lclPC, ymax=uclPC), alpha=0.2)+
+  geom_line(data=regPreds, aes(x=nestDens, y=predPC), color='black')+
+  geom_point(data=pointComparison, aes(x=nestDens, y=estimate), alpha=0.2)+
+  theme_bw()+
+  theme(panel.grid=element_blank())+
+  # geom_errorbar(data=pointComparison, aes(x=nests, y=estimate, ymin=lcl, ymax=ucl))+
+  xlab('Density of active nests within 100 m of point during survey')+
+  ylab('Survey-specific PC estimate of WOTH density within 100 m of point')+
+  theme(legend.position='bottom',
+        legend.box='vertical')
+```
+
+# What now?
+
+Time to start writing? I'm happy to take the lead starting 4/16 (I have some deadlines on 4/15). Now that my head is back in this, I want to push it over the finish line quickly and maybe shoot to submit by mid May.
