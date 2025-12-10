@@ -2416,3 +2416,69 @@ jpeg('figureS5.jpg', width=4, height=3.5, units='in', res=300)
 diffDens
 dev.off()
 ```
+
+## Table S1 \| Data collected by plot and year
+
+```{r}
+
+# year
+# plot
+# size
+# pcPoints
+# surveys
+# detections
+# detectionsPerSurvey
+# nestsActiveDuringPCs
+# successfulNests
+# fledglings
+# fledglingsPerNest
+# fledglingsPerSuccessfulNest
+
+
+tmp = data.frame(nestData) %>% 
+  group_by(nestYear, plot) %>% 
+  summarise(nestsActive = n(),
+            successfulNests = sum(fledged > 0),
+            fledglings = sum(fledged)) %>% 
+  mutate(fledglingsPerNest = fledglings/nestsActive,
+         fledglingsPerSuccessfulNest = fledglings/successfulNests) %>% 
+  rename(year = nestYear) %>% 
+  left_join(data.frame(plots) %>% 
+              select(plot, year, hectares), by=c('plot', 'year'))
+
+tmp1 = birds %>% 
+  left_join(pcLocations %>% 
+              select(point, plot) %>% 
+              unique(), by='point') %>% 
+  mutate(year = year(date)) %>% 
+  group_by(year, plot) %>% 
+  summarise(pcDetections = n()) %>% 
+  ungroup() %>% 
+  full_join(tmp, by=c('plot', 'year'))
+  
+
+tmp2 = surveys %>% 
+  select(year, point) %>% 
+  left_join(pcLocations %>% 
+              select(point, plot), by='point') %>% 
+  unique() %>% 
+  group_by(year, plot) %>% 
+  summarise(pcPoints = n()) %>% 
+  full_join(tmp1, by=c('year', 'plot'))
+
+tmp3 = surveys %>% 
+  select(year, point) %>% 
+  left_join(pcLocations %>% 
+              select(point, plot), by='point') %>% 
+  group_by(year, plot) %>% 
+  summarise(surveys = n()) %>% 
+  full_join(tmp2, by=c('year', 'plot')) %>% 
+  mutate(detsPerSurvey = pcDetections / surveys)
+
+tmp4 = tmp3 %>% 
+  select(year, plot, hectares, pcPoints, surveys, pcDetections, detsPerSurvey, nestsActive, successfulNests, fledglings, fledglingsPerNest, fledglingsPerSuccessfulNest)
+
+write.csv(tmp4, 'tableS1.csv')
+
+
+```
