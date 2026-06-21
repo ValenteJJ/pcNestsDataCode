@@ -1,2 +1,4 @@
 modelSpAbund.RData filter=lfs diff=lfs merge=lfs -text
 modelSpAbund2.RData filter=lfs diff=lfs merge=lfs -text
+modelSpAbundSinging.RData filter=lfs diff=lfs merge=lfs -text
+modelSpAbund2Singing.RData filter=lfs diff=lfs merge=lfs -text
