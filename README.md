@@ -1,1 +1,1 @@
-# pcNestsDataCode
+This repository contains all data and code necessary to replicate the analyses associated with our manuscript entitled "Count-based estimates of songbird breeding density show weak correlations with reproductive activity and habitat quality."  The user can replicate all analyses in the main document using the file titled "scriptForManuscriptSingingMales.qmd" and all analyses in the appendix using the file titled "scriptForManuscriptAllBirds.qmd."
